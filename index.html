@@ -318,6 +318,186 @@
       <!-- Dropzone (Collapses into compact bar when file loaded) -->
       <div id="dropzone"
            class="relative flex flex-col items-center justify-center text-center border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 rounded-xl py-8 px-4 cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-800/30 hover:bg-teal-50/20 dark:hover:bg-teal-950/20"
+           tabindex="0" role="button" aria-label="Drop MRI image files or click to browse">
+        <input id="fileInput" type="file" accept=".jpg,.jpeg,.jfif,.png,.webp,.bmp,.gif,.avif,.pdf,image/*" multiple class="sr-only" />
+        <div class="w-10 h-10 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center mb-2">
+          <i data-lucide="upload" class="w-5 h-5"></i>
+        </div>
+        <p class="font-semibold text-xs sm:text-sm text-ink dark:text-white">Drag &amp; drop MRI scan files here or click to browse</p>
+        <p class="text-slate-500 text-xs mt-0.5 font-mono">Supports PNG, JPG, WebP, BMP, AVIF, or PDF</p>
+      </div>
+
+      <!-- Preview Wrap -->
+      <div id="previewWrap" class="hidden mt-4">
+        
+        <!-- Viewport Toolstrip -->
+        <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-line dark:border-slate-800 text-xs font-mono">
+          <div class="flex items-center gap-1 text-slate-500">
+            <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+            <span class="font-semibold text-slate-700 dark:text-slate-300">PACS VIEWPORT</span>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <!-- Window/Level Colormap Preset -->
+            <button id="toggleColormap" type="button" title="Cycle Colormap: Grayscale, Inverted, Heatmap, High Contrast" class="px-2 py-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <i data-lucide="sliders" class="w-3 h-3 text-teal-600 dark:text-teal-400"></i>
+              <span id="hudWindowPreset">Grayscale</span>
+            </button>
+
+            <!-- Crosshairs -->
+            <button id="toggleCrosshair" type="button" title="Toggle DICOM Crosshairs" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-teal-600 dark:text-teal-400">
+              <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <div class="h-3 w-px bg-line dark:border-slate-800 mx-0.5"></div>
+
+            <!-- Zoom -->
+            <button id="zoomOut" type="button" aria-label="Zoom out" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"><i data-lucide="zoom-out" class="w-3.5 h-3.5"></i></button>
+            <span id="hudZoomLevel" class="text-[11px] font-mono font-semibold px-1 text-slate-600 dark:text-slate-400">100%</span>
+            <button id="zoomIn" type="button" aria-label="Zoom in" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"><i data-lucide="zoom-in" class="w-3.5 h-3.5"></i></button>
+            <button id="zoomReset" type="button" aria-label="Reset zoom" title="Reset Viewport" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"><i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i></button>
+          </div>
+        </div>
+
+        <!-- DICOM Viewport Box -->
+        <div id="viewportContainer" class="scan-frame bg-black rounded-lg overflow-hidden h-80 sm:h-96 flex items-center justify-center relative select-none border border-slate-800 cursor-crosshair">
+          <span class="br-tr"></span><span class="br-bl"></span>
+          
+          <!-- Image Element -->
+          <img id="previewImg" alt="Brain MRI Viewport" class="hidden max-h-full max-w-full object-contain select-none transition-transform duration-75" draggable="false" />
+          
+          <!-- PDF Document Icon -->
+          <div id="previewPdfIcon" class="hidden flex-col items-center gap-2 text-teal-300">
+            <i data-lucide="file-text" class="w-12 h-12"></i>
+            <span class="text-xs font-mono">PDF Study Loaded</span>
+          </div>
+
+          <!-- Crosshairs -->
+          <div id="crosshairHUD" class="absolute inset-0 pointer-events-none hud-crosshair"></div>
+
+          <!-- DICOM 4-Corner Telemetry Overlay -->
+          <div class="absolute top-2 left-2.5 font-mono text-[10px] text-teal-400/90 pointer-events-none leading-tight bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div>STUDY: ANONYMIZED // AXIAL</div>
+            <div id="metaRes" class="text-slate-400">--</div>
+          </div>
+
+          <div class="absolute top-2 right-2.5 font-mono text-[10px] text-teal-400/90 pointer-events-none leading-tight text-right bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div>FOV: CALIBRATED</div>
+            <div class="text-slate-400">8-BIT RASTER</div>
+          </div>
+
+          <div class="absolute bottom-2 left-2.5 font-mono text-[10px] text-slate-300 pointer-events-none leading-tight bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div id="metaName" class="truncate max-w-[160px] sm:max-w-[220px]">--</div>
+            <div id="metaSize" class="text-slate-400">--</div>
+          </div>
+
+          <!-- Real-Time Cursor HU & Coordinate Readout -->
+          <div class="absolute bottom-2 right-2.5 font-mono text-[10px] text-teal-300 pointer-events-none leading-tight text-right bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div id="hudCoordinates">X: -- Y: -- | -- HU</div>
+            <div class="text-slate-400">Rec.601 Calibrated</div>
+          </div>
+        </div>
+
+        <!-- Metric Summary Chips -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs font-mono">
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Mean Signal</span>
+            <span id="metaMean" class="font-bold text-teal-600 dark:text-teal-400 mt-0.5 block">--</span>
+          </div>
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Contrast (σ)</span>
+            <span id="recapStdDev" class="font-bold text-slate-700 dark:text-slate-200 mt-0.5 block">--</span>
+          </div>
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Mean/σ Ratio</span>
+            <span id="recapSnr" class="font-bold text-teal-600 dark:text-teal-400 mt-0.5 block">--</span>
+          </div>
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Dynamic Range</span>
+            <span id="recapMean" class="font-bold text-slate-700 dark:text-slate-200 mt-0.5 block">0 &rarr; 255</span>
+          </div>
+        </div>
+
+        <!-- Action Button -->
+        <button id="analyzeBtn" type="button"
+                class="mt-4 w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs sm:text-sm py-2.5 rounded-lg shadow-sm transition-all disabled:opacity-60 cursor-pointer font-mono uppercase tracking-wide">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> Run Multimodal AI Scan Review
+        </button>
+
+        <div id="processingBox" class="hidden mt-2 border border-teal-500/30 bg-teal-500/10 rounded-lg px-3 py-2" role="status" aria-live="polite">
+          <div class="flex items-center gap-2">
+            <i data-lucide="loader-2" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 spinner"></i>
+            <span id="processingText" class="text-xs font-mono font-medium text-teal-800 dark:text-teal-300">Consulting Gemini Multimodal Vision API on uploaded slice…</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Right Column: AI Findings & Radiological Impression (5 Cols) -->
+    <div class="lg:col-span-5 bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl shadow-card p-4 sm:p-5 transition-colors duration-200">
+      
+      <div class="flex items-center justify-between mb-3 pb-2 border-b border-line dark:border-slate-800">
+        <div class="flex items-center gap-2">
+          <h3 class="font-bold text-xs sm:text-sm text-ink dark:text-white font-mono uppercase">AI Radiological Impression</h3>
+          <span id="resultsBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">Awaiting Upload</span>
+        </div>
+        <button id="exportReportBtn" type="button" class="hidden text-xs font-mono font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1">
+          <i data-lucide="printer" class="w-3 h-3"></i> Print Report
+        </button>
+      </div>
+
+      <!-- Empty State -->
+      <div id="resultsEmpty" class="flex flex-col items-center justify-center text-center py-16 text-slate-400">
+        <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mb-2">
+          <i data-lucide="scan" class="w-5 h-5"></i>
+        </div>
+        <p class="text-xs sm:text-sm font-semibold text-ink dark:text-white">Awaiting Scan Review</p>
+        <p class="text-xs text-slate-500 mt-1 max-w-xs">Drop an MRI scan on the left or select a benchmark to view preliminary diagnostic impressions.</p>
+      </div>
+
+      <!-- Populated Results -->
+      <div id="resultsBody" class="hidden space-y-3">
+        <div class="p-3.5 rounded-lg border border-line dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+          <div id="observationText" class="text-xs text-slate-800 dark:text-slate-200 leading-relaxed space-y-2"></div>
+        </div>
+
+        <div class="p-2.5 rounded-lg border border-line dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-mono text-slate-500 leading-normal">
+          <div class="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold mb-1">
+            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-teal-600"></i> Clinical Workflow Notice
+          </div>
+          Preliminary algorithmic correlation only. Does not replace accredited clinical radiology sign-off.
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================= AI LAB (SYLLABUS: UNIT 5 K-MEANS, UNITS 3 & 6 EXPERT SYSTEM) ============================= -->
+<section id="ai-lab" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 scroll-mt-14">
+  <div class="bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl shadow-card p-4 sm:p-6 transition-colors duration-200">
+    
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-2 pb-2 border-b border-line dark:border-slate-800">
+      <div class="flex items-center gap-2">
+        <span class="w-7 h-7 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+          <i data-lucide="cpu" class="w-4 h-4"></i>
+        </span>
+        <div>
+          <h2 class="text-sm sm:text-base font-bold font-mono text-ink dark:text-white uppercase">AI Lab &mdash; Unsupervised Clustering &amp; Expert System</h2>
+          <p class="text-[11px] text-slate-500 font-mono">100% Client-Side Engine &middot; Unit 5 K-means tissue segmentation &middot; Unit 3 &amp; 6 Forward Chaining</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 text-xs font-mono">
+        <label for="labK" class="text-slate-500">Clusters (k):</label>
+        <select id="labK" class="border border-line dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white rounded px-2 py-1 font-mono text-xs">
+          <option value="2">2 (Binary: Brain vs Air)</option>
+          <option value="3">3 (CSF, Parenchyma, Air)</option>
+          <option value="4" selected>4 (CSF, Gray, White, Lesion)</option>
+          <option value="5">5 (Detailed 5-Band Spectrum)</option>
+        </select>
       </div>
     </main>
   </div>

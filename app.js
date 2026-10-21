@@ -1,6 +1,5 @@
 /* =========================================================================
    NeuroScan PACS — Core DICOM Viewport & Radiomics Engine
-   Module: Pixel Radiomics & HTML5 Canvas Raster Processing
    ========================================================================= */
 
       } catch (e) {}
@@ -343,5 +342,194 @@
     if (type === 't2') {
       // Periventricular Focal Hyperintensity in right centrum semiovale
       const grad = ctx.createRadialGradient(cx + 38, cy - 12, 2, cx + 38, cy - 12, 18);
+      grad.addColorStop(0, '#f8fafc');
+      grad.addColorStop(0.5, '#cbd5e1');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx + 38, cy - 12, 18, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (type === 'flair') {
+      // Demyelinating Plaque / White Matter Hyperintensity adjacent to frontal horn
+      const grad = ctx.createRadialGradient(cx + 28, cy - 26, 2, cx + 28, cy - 26, 14);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.6, '#e2e8f0');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx + 28, cy - 26, 14, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    return canvas.toDataURL('image/png');
+  }
+
+  // ---------- API Key & Endpoint Management ----------
+  const apiKeyBtn = document.getElementById('apiKeyBtn');
+  const apiKeyModal = document.getElementById('apiKeyModal');
+  const closeApiKeyModal = document.getElementById('closeApiKeyModal');
+  const cancelApiKeyBtn = document.getElementById('cancelApiKeyBtn');
+  const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+  const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
+  const testApiKeyBtn = document.getElementById('testApiKeyBtn');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const apiKeyStatusText = document.getElementById('apiKeyStatusText');
+  const apiKeyTestStatus = document.getElementById('apiKeyTestStatus');
+  const aiModePill = document.getElementById('aiModePill');
+  const chatSubtext = document.getElementById('chatSubtext');
+
+  function updateApiKeyUi() {
+    const activeModelName = workingEndpoint?.model || 'gemini-3.8-flash';
+    if (geminiApiKey) {
+      if (apiKeyStatusText) apiKeyStatusText.textContent = `Gemini: ${activeModelName}`;
+      if (apiKeyBtn) {
+        apiKeyBtn.className = 'inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300 px-3 py-1 text-xs font-mono font-medium transition-colors shadow-sm cursor-pointer hover:bg-teal-500/20';
+      }
+      if (aiModePill) {
+        aiModePill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> <span class="font-mono text-xs">${activeModelName} Connected</span>`;
+        aiModePill.className = 'inline-flex items-center gap-2 px-3 py-1 bg-teal-500/10 border border-teal-500/30 rounded-full text-xs font-medium text-teal-700 dark:text-teal-300 cursor-pointer hover:bg-teal-500/20';
+      }
+      if (chatSubtext) {
+        chatSubtext.textContent = `Online: ${activeModelName} · Click badge to reconfigure`;
+      }
+    } else {
+      if (apiKeyStatusText) apiKeyStatusText.textContent = 'Gemini API: Offline';
+      if (apiKeyBtn) {
+        apiKeyBtn.className = 'inline-flex items-center gap-1.5 rounded-full border border-line dark:border-slate-800 bg-surface dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 transition-colors shadow-sm cursor-pointer';
+      }
+      if (aiModePill) {
+        aiModePill.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-400"></span> <span class="font-mono text-xs">Offline Diagnostics</span>`;
+        aiModePill.className = 'inline-flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-900 border border-line dark:border-slate-800 rounded-full text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800';
+      }
+      if (chatSubtext) {
+        chatSubtext.textContent = 'Offline Radiomic Assistant · Connect key for live vision AI';
+      }
+    }
+    safeCreateIcons();
+  }
+  updateApiKeyUi();
+
+  function openApiKeyModal() {
+    if (apiKeyInput) apiKeyInput.value = geminiApiKey || '';
+    apiKeyTestStatus?.classList.add('hidden');
+    apiKeyModal?.classList.remove('hidden');
+    setTimeout(() => apiKeyInput?.focus(), 60);
+  }
+
+  const hideModal = () => apiKeyModal?.classList.add('hidden');
+
+  apiKeyBtn?.addEventListener('click', openApiKeyModal);
+  aiModePill?.addEventListener('click', openApiKeyModal);
+  closeApiKeyModal?.addEventListener('click', hideModal);
+  cancelApiKeyBtn?.addEventListener('click', hideModal);
+  apiKeyModal?.addEventListener('click', (e) => {
+    if (e.target === apiKeyModal) hideModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && apiKeyModal && !apiKeyModal.classList.contains('hidden')) {
+      hideModal();
+    }
+  });
+
+  testApiKeyBtn?.addEventListener('click', async () => {
+    const testKey = apiKeyInput.value.trim();
+    if (!testKey) {
+      apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900';
+      apiKeyTestStatus.textContent = 'Please enter an API key to test connection.';
+      apiKeyTestStatus.classList.remove('hidden');
+      return;
+    }
+
+    testApiKeyBtn.disabled = true;
+    apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700';
+    apiKeyTestStatus.textContent = 'Contacting Google ModelService for available Flash models…';
+    apiKeyTestStatus.classList.remove('hidden');
+
+    let success = false;
+    let connectedModel = '';
+    let lastErrorMsg = '';
+
+    try {
+      const candidates = await getCandidateEndpoints();
+      for (const candidate of candidates) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/${candidate.version}/models/${candidate.model}:generateContent?key=${testKey}`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': testKey
+            },
+            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping' }] }] }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          if (res.ok) {
+            success = true;
+            connectedModel = candidate.model;
+            workingEndpoint = candidate;
+            storage.set('NEUROSCAN_WORKING_ENDPOINT', JSON.stringify(candidate));
+            break;
+          } else {
+            const errJson = await res.json().catch(() => ({}));
+            lastErrorMsg = errJson?.error?.message || `HTTP ${res.status}`;
+          }
+        } catch (e) {
+          lastErrorMsg = e.name === 'AbortError' ? 'Connection timed out after 6 seconds' : e.message;
+        }
+      }
+    } catch (err) {
+      lastErrorMsg = err.message;
+    }
+
+    testApiKeyBtn.disabled = false;
+    if (success) {
+      apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800';
+      apiKeyTestStatus.textContent = `✅ Successfully connected to ${connectedModel}!`;
+    } else {
+      apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900';
+      apiKeyTestStatus.textContent = `❌ Verification error: ${lastErrorMsg || 'Please check your key in Google AI Studio.'}`;
+    }
+  });
+
+  saveApiKeyBtn?.addEventListener('click', () => {
+    const val = apiKeyInput.value.trim();
+    if (val) {
+      geminiApiKey = val;
+      storage.set('NEUROSCAN_GEMINI_KEY', val);
+      updateApiKeyUi();
+      appendMessage('assistant', `✅ **Google Gemini API Key connected.** When you click **Run AI Scan Review**, your actual MRI image will be analyzed live by Gemini Vision (${workingEndpoint.model}).`);
+    }
+    hideModal();
+  });
+
+  clearApiKeyBtn?.addEventListener('click', () => {
+    geminiApiKey = '';
+    storage.remove('NEUROSCAN_GEMINI_KEY');
+    updateApiKeyUi();
+    hideModal();
+    appendMessage('assistant', `ℹ️ Gemini API key removed. Offline smart radiomic co-pilot is active.`);
+  });
+
+  // ---------- Mobile Navigation ----------
+  const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  const mobileMenu = document.getElementById('mobileMenu');
+  mobileMenuBtn?.addEventListener('click', () => {
+    mobileMenu?.classList.toggle('hidden');
+  });
+  mobileMenu?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => mobileMenu.classList.add('hidden')));
+
+  // ---------- File Ingestion & Benchmark Scans ----------
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const previewWrap = document.getElementById('previewWrap');
+  const previewImg = document.getElementById('previewImg');
+  const previewPdfIcon = document.getElementById('previewPdfIcon');
+  const metaName = document.getElementById('metaName');
+  const metaSize = document.getElementById('metaSize');
+  const metaRes = document.getElementById('metaRes');
 window.analyzeActualImagePixels = analyzeActualImagePixels;
-console.log('Radiomics raster engine loaded successfully.');
