@@ -1,7 +1,23 @@
 /* =========================================================================
-   NeuroScan PACS — Core DICOM Viewport & Radiomics Engine
+   NeuroScan — Clinical Brain MRI Analysis, True Pixel Radiomics & AI Review
    ========================================================================= */
 
+(function () {
+  'use strict';
+
+  // Safe Storage Helper (handles file:// restrictions and private mode safely)
+  const storage = {
+    get(key, fallback = '') {
+      try {
+        const v = localStorage.getItem(key);
+        return v !== null ? v : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    },
+    set(key, val) {
+      try {
+        localStorage.setItem(key, val);
       } catch (e) {}
     },
     remove(key) {
@@ -532,4 +548,204 @@
   const metaName = document.getElementById('metaName');
   const metaSize = document.getElementById('metaSize');
   const metaRes = document.getElementById('metaRes');
+  const metaMean = document.getElementById('metaMean');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const crosshairHUD = document.getElementById('crosshairHUD');
+  const toggleCrosshairBtn = document.getElementById('toggleCrosshair');
+  const viewportContainer = document.getElementById('viewportContainer');
+  const hudCoordinates = document.getElementById('hudCoordinates');
+  const hudZoomLevel = document.getElementById('hudZoomLevel');
+  const hudWindowPreset = document.getElementById('hudWindowPreset');
+
+  const batchStripContainer = document.getElementById('batchStripContainer');
+  const batchThumbnailsList = document.getElementById('batchThumbnailsList');
+  const batchCountBadge = document.getElementById('batchCountBadge');
+  const clearBatchBtn = document.getElementById('clearBatchBtn');
+
+  // Quick Benchmark Load Buttons
+  const loadT1Btn = document.getElementById('loadSampleT1');
+  const loadT2Btn = document.getElementById('loadSampleT2');
+  const loadFlairBtn = document.getElementById('loadSampleFlair');
+
+  async function loadSample(type, name, description) {
+    const dataUrl = generateBenchmarkScan(type);
+    const pixelStats = await analyzeActualImagePixels(dataUrl);
+
+    cohortScans.push({
+      id: 'benchmark-' + type + '-' + Date.now(),
+      name: name,
+      size: Math.round(dataUrl.length * 0.75),
+      dataUrl: dataUrl,
+      isPdf: false,
+      pixelStats: pixelStats,
+      aiAnalysis: null,
+      description: description
+    });
+
+    selectScan(cohortScans.length - 1);
+    updateBatchStrip();
+    updateCohortStatistics();
+  }
+
+  loadT1Btn?.addEventListener('click', () => {
+    loadSample('t1', 'BENCHMARK_AXIAL_T1_NORMAL.png', 'Axial T1 spin-echo normal anatomical benchmark');
+  });
+  loadT2Btn?.addEventListener('click', () => {
+    loadSample('t2', 'BENCHMARK_AXIAL_T2_HYPERINTENSE.png', 'Axial T2 TSE slice exhibiting right periventricular hyperintensity');
+  });
+  loadFlairBtn?.addEventListener('click', () => {
+    loadSample('flair', 'BENCHMARK_AXIAL_FLAIR_PLAQUE.png', 'Axial FLAIR sequence showing fluid attenuation with focal white matter lesion');
+  });
+
+  // Dropzone Handlers
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone?.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.add('drop-active');
+    })
+  );
+  ['dragleave', 'drop'].forEach(evt =>
+    dropzone?.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.remove('drop-active');
+    })
+  );
+  dropzone?.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUserFiles(Array.from(e.dataTransfer.files));
+    }
+  });
+  dropzone?.addEventListener('click', () => fileInput?.click());
+  dropzone?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput?.click();
+    }
+  });
+  fileInput?.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files.length > 0) {
+      handleUserFiles(Array.from(fileInput.files));
+    }
+  });
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleUserFiles(files) {
+    const validFiles = files.filter(f =>
+      f.type.startsWith('image/') ||
+      f.type === 'application/pdf' ||
+      f.name.match(/\.(jpe?g|jfif|png|webp|bmp|gif|avif|pdf)$/i)
+    );
+
+    if (validFiles.length === 0) {
+      alert('Unsupported file format. Please upload JPG, PNG, WebP, BMP, GIF, AVIF or PDF brain MRI files.');
+      return;
+    }
+
+    for (const file of validFiles) {
+      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
+      const dataUrl = await readFileAsDataUrl(file);
+      const pixelStats = isPdf ? {
+        width: 0,
+        height: 0,
+        min: 0,
+        max: 0,
+        mean: 'N/A',
+        stdDev: 'N/A',
+        snr: 'N/A',
+        histogram: new Array(24).fill(0)
+      } : await analyzeActualImagePixels(dataUrl);
+
+      cohortScans.push({
+        id: 'scan-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        name: file.name,
+        size: file.size,
+        dataUrl: dataUrl,
+        isPdf: isPdf,
+        pixelStats: pixelStats,
+        aiAnalysis: null
+      });
+    }
+
+    selectScan(cohortScans.length - 1);
+    updateBatchStrip();
+    updateCohortStatistics();
+  }
+
+  // ---------- Scan Selection & Viewport Display ----------
+  function selectScan(index) {
+    if (index < 0 || index >= cohortScans.length) return;
+    activeScanIndex = index;
+    const scan = cohortScans[index];
+
+    previewWrap?.classList.remove('hidden');
+
+    if (metaName) metaName.textContent = scan.name;
+    if (metaSize) metaSize.textContent = formatBytes(scan.size);
+    if (metaRes) metaRes.textContent = scan.isPdf ? 'PDF Document' : `${scan.pixelStats.width} × ${scan.pixelStats.height} px`;
+    if (metaMean) metaMean.textContent = scan.isPdf ? 'N/A' : `${scan.pixelStats.mean} HU`;
+
+    if (scan.isPdf) {
+      previewImg?.classList.add('hidden');
+      previewPdfIcon?.classList.remove('hidden');
+      previewPdfIcon?.classList.add('flex');
+    } else {
+      if (previewImg) {
+        previewImg.src = scan.dataUrl;
+        previewImg.classList.remove('hidden');
+      }
+      previewPdfIcon?.classList.add('hidden');
+      previewPdfIcon?.classList.remove('flex');
+      resetViewportTransform();
+    }
+
+    // Synchronize findings panel
+    if (scan.aiAnalysis) {
+      displayAiFindings(scan.aiAnalysis);
+    } else {
+      resetFindingsPanel();
+    }
+
+    updateBatchStrip();
+
+    // Trigger AI Lab and broadcast selection event
+    window.dispatchEvent(new CustomEvent('neuroscan:scanSelected', {
+      detail: { index: activeScanIndex, scan: scan }
+    }));
+    if (window.NeuroAILab && typeof window.NeuroAILab.runLab === 'function') {
+      window.NeuroAILab.runLab(scan);
+    }
+  }
+
+  function updateBatchStrip() {
+    if (cohortScans.length > 1) {
+      batchStripContainer?.classList.remove('hidden');
+      if (batchCountBadge) batchCountBadge.textContent = `${cohortScans.length} files`;
+    } else {
+      batchStripContainer?.classList.add('hidden');
+    }
+
+    if (!batchThumbnailsList) return;
+    batchThumbnailsList.innerHTML = '';
+
+    cohortScans.forEach((scan, idx) => {
+      const isSelected = idx === activeScanIndex;
+      const card = document.createElement('div');
+      card.className = `flex-shrink-0 w-36 p-2 rounded-lg border text-left cursor-pointer transition-all ${
+        isSelected
 window.analyzeActualImagePixels = analyzeActualImagePixels;
