@@ -1148,4 +1148,234 @@ Maintain professional, concise clinical terminology.`;
   }
 
   // ---------- Cohort & Real Pixel Statistics ----------
+  const statTotalScans = document.getElementById('statTotalScans');
+  const statFileSizeTotal = document.getElementById('statFileSizeTotal');
+  const statAvgRes = document.getElementById('statAvgRes');
+  const statMeanSignal = document.getElementById('statMeanSignal');
+  const statMeanContrast = document.getElementById('statMeanContrast');
+  const cohortTableBody = document.getElementById('cohortTableBody');
+  const intensityHistogramBars = document.getElementById('intensityHistogramBars');
+  const exportCsvBtn = document.getElementById('exportCsvBtn');
+  const exportJsonBtn = document.getElementById('exportJsonBtn');
+
+  function updateCohortStatistics() {
+    const total = cohortScans.length;
+    if (statTotalScans) statTotalScans.textContent = total;
+
+    if (total === 0) {
+      if (statFileSizeTotal) statFileSizeTotal.textContent = '0 KB total';
+      if (statAvgRes) statAvgRes.textContent = '--';
+      if (statMeanSignal) statMeanSignal.textContent = '--';
+      if (statMeanContrast) statMeanContrast.textContent = '--';
+      if (cohortTableBody) {
+        cohortTableBody.innerHTML = `<tr><td colspan="9" class="py-8 text-center text-slate-400 font-mono">No scans uploaded yet. Drag and drop your MRI files above or load benchmark scans to populate the table.</td></tr>`;
+      }
+      if (intensityHistogramBars) intensityHistogramBars.innerHTML = '';
+      return;
+    }
+
+    const totalBytes = cohortScans.reduce((acc, s) => acc + (s.size || 0), 0);
+    if (statFileSizeTotal) statFileSizeTotal.textContent = `${formatBytes(totalBytes)} total`;
+
+    const validImages = cohortScans.filter(s => !s.isPdf && s.pixelStats && s.pixelStats.width > 0);
+    if (validImages.length > 0) {
+      const avgW = Math.round(validImages.reduce((acc, s) => acc + s.pixelStats.width, 0) / validImages.length);
+      const avgH = Math.round(validImages.reduce((acc, s) => acc + s.pixelStats.height, 0) / validImages.length);
+      if (statAvgRes) statAvgRes.textContent = `${avgW}×${avgH}`;
+
+      const avgMean = (validImages.reduce((acc, s) => acc + parseFloat(s.pixelStats.mean || 0), 0) / validImages.length).toFixed(1);
+      if (statMeanSignal) statMeanSignal.textContent = avgMean;
+
+      const avgContrast = (validImages.reduce((acc, s) => acc + parseFloat(s.pixelStats.stdDev || 0), 0) / validImages.length).toFixed(1);
+      if (statMeanContrast) statMeanContrast.textContent = avgContrast;
+    } else {
+      if (statAvgRes) statAvgRes.textContent = 'PDF';
+      if (statMeanSignal) statMeanSignal.textContent = '--';
+      if (statMeanContrast) statMeanContrast.textContent = '--';
+    }
+
+    // Populate Table
+    if (cohortTableBody) {
+      cohortTableBody.innerHTML = '';
+      cohortScans.forEach((scan, idx) => {
+        const isSelected = idx === activeScanIndex;
+        const tr = document.createElement('tr');
+        tr.className = `hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isSelected ? 'bg-teal-500/10' : ''}`;
+
+        tr.innerHTML = `
+          <td class="py-2.5 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full ${isSelected ? 'bg-teal-500' : 'bg-slate-300 dark:bg-slate-600'}"></span>
+              <span class="truncate max-w-[180px] sm:max-w-[240px]" title="${scan.name}">${scan.name}</span>
+            </div>
+          </td>
+          <td class="py-2.5 px-3 font-mono">${scan.isPdf ? 'PDF' : `${scan.pixelStats.width}×${scan.pixelStats.height}`}</td>
+          <td class="py-2.5 px-3 font-mono text-slate-500">${formatBytes(scan.size)}</td>
+          <td class="py-2.5 px-3 font-mono">${scan.pixelStats.min}</td>
+          <td class="py-2.5 px-3 font-mono">${scan.pixelStats.max}</td>
+          <td class="py-2.5 px-3 font-mono font-semibold text-teal-600 dark:text-teal-400">${scan.pixelStats.mean}</td>
+          <td class="py-2.5 px-3 font-mono">${scan.pixelStats.stdDev}</td>
+          <td class="py-2.5 px-3 font-mono font-bold">${scan.pixelStats.snr}</td>
+          <td class="py-2.5 px-4 text-right">
+            <button class="inspect-btn text-xs font-semibold text-teal-600 dark:text-teal-400 hover:underline">
+              ${isSelected ? 'Active' : 'Inspect'}
+            </button>
+          </td>
+        `;
+
+        tr.querySelector('.inspect-btn')?.addEventListener('click', () => {
+          selectScan(idx);
+          document.getElementById('upload')?.scrollIntoView({ behavior: 'smooth' });
+        });
+        cohortTableBody.appendChild(tr);
+      });
+    }
+
+    renderRealHistogram();
+  }
+
+  function renderRealHistogram() {
+    if (!intensityHistogramBars) return;
+    intensityHistogramBars.innerHTML = '';
+
+    const scan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    const bins = (scan && scan.pixelStats && scan.pixelStats.histogram)
+      ? scan.pixelStats.histogram
+      : new Array(24).fill(0);
+
+    const maxVal = Math.max(...bins, 1);
+    bins.forEach((count, i) => {
+      const heightPct = Math.max(6, Math.round((count / maxVal) * 100));
+      const bar = document.createElement('div');
+      bar.className = 'flex-1 rounded-t transition-all duration-300 relative group cursor-pointer';
+      bar.style.height = `${heightPct}%`;
+      // Anatomical intensity spectrum coloring: Air/Dark -> Deep Gray -> Subcortical White -> Hyperintense
+      bar.style.backgroundColor = i > 18 ? '#ef4444' : i > 13 ? '#10b981' : i > 6 ? '#3b82f6' : '#64748b';
+      bar.title = `Bin ${i + 1} (~${Math.round((i / 24) * 255)} HU): ${count} pixels sampled`;
+      intensityHistogramBars.appendChild(bar);
+    });
+  }
+
+  // Export CSV
+  exportCsvBtn?.addEventListener('click', () => {
+    if (cohortScans.length === 0) {
+      alert('No scans to export.');
+      return;
+    }
+
+    let csv = 'Filename,Width,Height,FileSizeBytes,Min_Luminance,Max_Luminance,Mean_Signal,StdDev_Contrast,Mean_Sigma_Ratio\n';
+    cohortScans.forEach(s => {
+      csv += `"${s.name}",${s.pixelStats.width},${s.pixelStats.height},${s.size},${s.pixelStats.min},${s.pixelStats.max},${s.pixelStats.mean},${s.pixelStats.stdDev},${s.pixelStats.snr}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `NeuroScan_Radiomics_${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  // Export JSON
+  exportJsonBtn?.addEventListener('click', () => {
+    if (cohortScans.length === 0) {
+      alert('No scans to export.');
+      return;
+    }
+    const payload = {
+      workbench: 'NeuroScan AI',
+      exportedAt: new Date().toISOString(),
+      totalScans: cohortScans.length,
+      scans: cohortScans.map(s => ({
+        name: s.name,
+        sizeBytes: s.size,
+        dimensions: { width: s.pixelStats.width, height: s.pixelStats.height },
+        pixelStats: {
+          min: s.pixelStats.min,
+          max: s.pixelStats.max,
+          mean: s.pixelStats.mean,
+          contrastStdDev: s.pixelStats.stdDev,
+          snr: s.pixelStats.snr
+        },
+        aiReview: s.aiAnalysis || null
+      }))
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `NeuroScan_Radiomics_${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  // ---------- Interactive Diagnostic Co-Pilot Chat ----------
+  const chatForm = document.getElementById('chatForm');
+  const chatInput = document.getElementById('chatInput');
+  const chatTranscript = document.getElementById('chatTranscript');
+  const attachBtn = document.getElementById('attachBtn');
+  const clearChatBtn = document.getElementById('clearChatBtn');
+
+  chatInput?.addEventListener('input', () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(120, chatInput.scrollHeight) + 'px';
+  });
+
+  function renderMarkdown(text) {
+    if (!text) return '';
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const lines = escaped.split('\n');
+    let html = '';
+    let inList = false;
+
+    for (const line of lines) {
+      if (/^\s*[-*]\s+/.test(line)) {
+        if (!inList) {
+          html += '<ul class="list-disc list-inside space-y-1 my-1.5">';
+          inList = true;
+        }
+        html += `<li>${line.replace(/^\s*[-*]\s+/, '')}</li>`;
+      } else {
+        if (inList) {
+          html += '</ul>';
+          inList = false;
+        }
+        html += line ? `<p class="${html ? 'mt-1.5' : ''}">${line}</p>` : '';
+      }
+    }
+    if (inList) html += '</ul>';
+
+    return html
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`(.+?)`/g, '<code class="font-mono text-xs bg-slate-200/80 dark:bg-slate-800 px-1 py-0.5 rounded text-slate-800 dark:text-slate-200">$1</code>');
+  }
+
+  function appendMessage(role, text) {
+    if (!chatTranscript) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'flex ' + (role === 'user' ? 'justify-end' : 'justify-start');
+    const bubble = document.createElement('div');
+    bubble.className = role === 'user'
+      ? 'max-w-[85%] bg-ink dark:bg-teal-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-xs sm:text-[13px] leading-relaxed shadow-sm'
+      : 'max-w-[85%] bg-white dark:bg-slate-900 border border-line dark:border-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 text-xs sm:text-[13px] leading-relaxed shadow-card text-ink dark:text-slate-100';
+    bubble.innerHTML = renderMarkdown(text);
+    wrap.appendChild(bubble);
+    chatTranscript.appendChild(wrap);
+    chatTranscript.scrollTop = chatTranscript.scrollHeight;
+
+    chatHistory.push({ role, text });
+    return bubble;
+  }
+
+  function appendTypingIndicator() {
+    removeTypingIndicator();
+    if (!chatTranscript) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'typingIndicator';
+    wrap.className = 'flex justify-start';
+    wrap.innerHTML = `
+      <div class="bg-white dark:bg-slate-900 border border-line dark:border-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-2.5 items-center shadow-sm">
 window.analyzeActualImagePixels = analyzeActualImagePixels;
