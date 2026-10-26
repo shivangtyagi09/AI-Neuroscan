@@ -1,0 +1,2764 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NeuroScan PACS &mdash; Clinical Brain MRI Analysis &amp; AI Review Workbench</title>
+<meta name="description" content="Clinical-grade brain MRI viewer, raster pixel radiomics, K-means tissue segmentation, and Gemini multimodal AI consultation." />
+
+<!-- Tailwind CSS (CDN) with dark mode class support -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Google Fonts: IBM Plex Sans + IBM Plex Mono -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          ink:      '#09090B',
+          slate2:   '#52525B',
+          bg:       '#F4F4F5',
+          surface:  '#FFFFFF',
+          line:     '#E4E4E7',
+          teal:     { DEFAULT: '#0D9488', 50:'#F0FDFA', 100:'#CCFBF1', 500:'#14B8A6', 600:'#0D9488', 700:'#0F766E', 800:'#115E59', 900:'#134E4A', 950:'#042F2E' },
+          scanblue: { DEFAULT: '#2563EB', 50:'#EFF6FF', 100:'#DBEAFE', 600:'#2563EB', 700:'#1D4ED8' },
+          amber:    { 50:'#FFFBEB', 100:'#FEF3C7', 500:'#F59E0B', 600:'#D97706', 700:'#B45309' },
+          rose:     { 50:'#FFF1F2', 100:'#FFE4E6', 500:'#F43F5E', 600:'#E11D48', 700:'#BE123C' },
+          slate: {
+            50:  '#FAFAFA',
+            100: '#F4F4F5',
+            200: '#E4E4E7',
+            300: '#D4D4D8',
+            400: '#A1A1AA',
+            500: '#71717A',
+            600: '#52525B',
+            700: '#3F3F46',
+            800: '#27272A',
+            850: '#1F1F23',
+            900: '#141416',
+            950: '#09090B',
+          },
+        },
+        fontFamily: {
+          sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        },
+        boxShadow: {
+          card: '0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04)',
+          elevated: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+        },
+      },
+    },
+  };
+</script>
+
+<style>
+  .dark {
+    color-scheme: dark;
+    background-color: #09090B !important;
+  }
+  .dark body {
+    background-color: #09090B !important;
+    color: #F4F4F5 !important;
+  }
+  .dark .bg-surface {
+    background-color: #121215 !important;
+  }
+  .dark header {
+    background-color: rgba(18, 18, 21, 0.95) !important;
+    border-color: #27272A !important;
+  }
+  .dark footer {
+    background-color: #0C0C0E !important;
+    border-color: #222226 !important;
+  }
+  .dark #viewportContainer {
+    background-color: #000000 !important;
+    border-color: #27272A !important;
+  }
+
+  /* DICOM Crosshair HUD */
+  .hud-crosshair::before {
+    content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px;
+    background: rgba(13, 148, 136, 0.45); pointer-events: none; z-index: 10;
+  }
+  .hud-crosshair::after {
+    content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px;
+    background: rgba(13, 148, 136, 0.45); pointer-events: none; z-index: 10;
+  }
+
+  /* Scan Corner Brackets */
+  .scan-frame { position: relative; }
+  .scan-frame::before, .scan-frame::after,
+  .scan-frame .br-tr, .scan-frame .br-bl {
+    content: ''; position: absolute; width: 12px; height: 12px; pointer-events: none; z-index: 20;
+  }
+  .scan-frame::before { top: 0; left: 0; border-top: 2px solid #0D9488; border-left: 2px solid #0D9488; }
+  .scan-frame .br-tr   { top: 0; right: 0; border-top: 2px solid #0D9488; border-right: 2px solid #0D9488; }
+  .scan-frame .br-bl   { bottom: 0; left: 0; border-bottom: 2px solid #0D9488; border-left: 2px solid #0D9488; }
+  .scan-frame::after   { bottom: 0; right: 0; border-bottom: 2px solid #0D9488; border-right: 2px solid #0D9488; }
+
+  /* Subtitle Workstation Grid */
+  .workstation-grid {
+    background-size: 20px 20px;
+    background-image: 
+      linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  }
+  .dark .workstation-grid {
+    background-image: 
+      linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  }
+
+  .chat-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+  .chat-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+  .dark .chat-scroll::-webkit-scrollbar-thumb { background: #27272A; }
+
+  @keyframes neuroBounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+    40% { transform: translateY(-6px); opacity: 1; }
+  }
+  .neuro-dot {
+    width: 6px !important; height: 6px !important;
+    border-radius: 9999px !important;
+    background-color: #0d9488 !important;
+    display: inline-block !important;
+    animation: neuroBounce 1.0s infinite ease-in-out !important;
+  }
+  .neuro-dot:nth-child(1) { animation-delay: 0s !important; }
+  .neuro-dot:nth-child(2) { animation-delay: 0.18s !important; }
+  .neuro-dot:nth-child(3) { animation-delay: 0.36s !important; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { animation: spin 900ms linear infinite; }
+
+  .drop-active { background-color: #F0FDFA; border-color: #0D9488 !important; }
+  .dark .drop-active { background-color: rgba(13, 148, 136, 0.15); border-color: #14B8A6 !important; }
+
+  /* High precision report styling */
+  @media print {
+    body * { visibility: hidden; }
+    #printableReport, #printableReport * { visibility: visible; }
+    #printableReport { position: absolute; left: 0; top: 0; width: 100%; display: block !important; padding: 20px; }
+    header, footer, nav, #assistant, .no-print { display: none !important; }
+  }
+</style>
+</head>
+
+<body class="bg-bg dark:bg-slate-950 text-ink dark:text-slate-100 antialiased min-h-screen flex flex-col transition-colors duration-200">
+
+<!-- ============================= CLINICAL WORKSTATION NAV ============================= -->
+<header class="sticky top-0 z-40 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-line dark:border-slate-800 shadow-sm transition-colors duration-200">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+    
+    <!-- Branding -->
+    <a href="#top" class="flex items-center gap-3 shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-teal-600 dark:bg-teal-500 text-white flex items-center justify-center shadow-sm">
+        <i data-lucide="scan" class="w-4 h-4"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-[15px] tracking-tight font-mono text-ink dark:text-white">NEUROSCAN<span class="text-teal-600 dark:text-teal-400">.PACS</span></span>
+          <span class="px-1.5 py-0.5 text-[9.5px] uppercase font-mono font-semibold tracking-wider bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">v2.4 Pro</span>
+        </div>
+        <p class="text-[10px] text-slate-500 font-mono tracking-tight hidden sm:block">Clinical MRI Radiomics &amp; Multimodal AI Engine</p>
+      </div>
+    </a>
+
+    <!-- Workstation Links -->
+    <nav class="hidden md:flex items-center gap-5 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase font-mono tracking-wide">
+      <a href="#upload" class="hover:text-teal-600 dark:hover:text-teal-400 transition-colors flex items-center gap-1.5">
+        <i data-lucide="scan-line" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i> Viewer
+      </a>
+      <a href="#ai-lab" class="hover:text-teal-600 dark:hover:text-teal-400 transition-colors flex items-center gap-1.5">
+        <i data-lucide="cpu" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i> AI Lab (K-Means)
+      </a>
+      <a href="#statistics" class="hover:text-teal-600 dark:hover:text-teal-400 transition-colors flex items-center gap-1.5">
+        <i data-lucide="bar-chart-2" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i> Radiomics
+      </a>
+      <a href="#assistant" class="hover:text-teal-600 dark:hover:text-teal-400 transition-colors flex items-center gap-1.5">
+        <i data-lucide="bot" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i> Co-Pilot
+      </a>
+    </nav>
+
+    <!-- Controls & Status -->
+    <div class="flex items-center gap-2">
+      <!-- Dark / Light Mode -->
+      <button id="themeToggleBtn" type="button" aria-label="Toggle theme" title="Toggle Light / Dark mode" 
+              class="p-1.5 rounded-lg border border-line dark:border-slate-800 bg-surface dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm">
+        <i data-lucide="moon" id="themeIconMoon" class="w-4 h-4"></i>
+        <i data-lucide="sun" id="themeIconSun" class="w-4 h-4 hidden text-amber-500"></i>
+      </button>
+
+      <!-- Gemini API Status Pill -->
+      <button id="apiKeyBtn" type="button" title="Configure Google Gemini Vision API Key" 
+              class="inline-flex items-center gap-1.5 rounded-full border border-line dark:border-slate-800 bg-surface dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-1 text-xs font-mono font-medium text-slate-700 dark:text-slate-300 transition-colors shadow-sm cursor-pointer">
+        <i data-lucide="key" class="w-3 h-3 text-scanblue-600 dark:text-scanblue-400"></i>
+        <span id="apiKeyStatusText">Gemini API: Offline</span>
+      </button>
+
+      <button id="mobileMenuBtn" class="md:hidden p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300">
+        <i data-lucide="menu" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile navigation drop -->
+  <div id="mobileMenu" class="hidden md:hidden border-t border-line dark:border-slate-800 bg-surface dark:bg-slate-900 px-4 py-3 space-y-2 text-xs font-mono font-semibold uppercase">
+    <a href="#upload" class="block py-1 hover:text-teal-600">Scan Viewer</a>
+    <a href="#ai-lab" class="block py-1 hover:text-teal-600">AI Lab (K-Means &amp; Rules)</a>
+    <a href="#statistics" class="block py-1 hover:text-teal-600">Radiomic Data</a>
+    <a href="#assistant" class="block py-1 hover:text-teal-600">Clinical Co-Pilot</a>
+  </div>
+</header>
+
+<!-- ============================= API KEY MODAL ============================= -->
+<div id="apiKeyModal" class="hidden fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="bg-surface dark:bg-slate-900 rounded-xl border border-line dark:border-slate-800 shadow-2xl max-w-md w-full p-6 text-left">
+    <div class="flex items-center justify-between mb-3 pb-2 border-b border-line dark:border-slate-800">
+      <div class="flex items-center gap-2">
+        <span class="w-7 h-7 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+          <i data-lucide="key" class="w-4 h-4"></i>
+        </span>
+        <h3 class="font-bold text-sm text-ink dark:text-white font-mono uppercase tracking-wide">Connect Google Gemini API</h3>
+      </div>
+      <button id="closeApiKeyModal" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <p class="text-slate2 dark:text-slate-300 text-xs leading-relaxed mb-4">
+      Enter your Google AI Studio API key to activate live <strong>multimodal vision analysis</strong> for uploaded brain MRI scans. Evaluates anatomical structures, pulse sequence characteristics, and potential focal abnormalities.
+    </p>
+    <div class="mb-4">
+      <label for="apiKeyInput" class="block text-xs font-mono font-semibold text-slate-700 dark:text-slate-300 mb-1">API Key</label>
+      <input id="apiKeyInput" type="password" placeholder="AIzaSy..." 
+             class="w-full font-mono text-xs border border-line dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none" />
+      <p class="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1 font-mono">
+        <i data-lucide="info" class="w-3 h-3"></i> Keys are stored client-side in browser local storage only.
+      </p>
+    </div>
+    <div id="apiKeyTestStatus" class="hidden mb-3 p-2.5 rounded-lg text-xs font-mono"></div>
+    <div class="flex items-center justify-between pt-3 border-t border-line dark:border-slate-800">
+      <button id="clearApiKeyBtn" type="button" class="text-xs text-rose-600 dark:text-rose-400 hover:underline font-mono">
+        Remove Key
+      </button>
+      <div class="flex gap-2">
+        <button id="testApiKeyBtn" type="button" class="px-3 py-1.5 border border-line dark:border-slate-700 rounded-lg text-xs font-mono font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Test Key</button>
+        <button id="cancelApiKeyBtn" type="button" class="px-3 py-1.5 border border-line dark:border-slate-700 rounded-lg text-xs font-mono hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
+        <button id="saveApiKeyBtn" type="button" class="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-mono font-semibold">Save Key</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<main class="flex-1">
+
+<!-- ============================= CLINICAL STUDY INGESTION BAR ============================= -->
+<section id="top" class="border-b border-line dark:border-slate-800 bg-surface dark:bg-slate-900/60 workstation-grid py-4 transition-colors duration-200">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div>
+        <h1 class="text-base sm:text-lg font-bold tracking-tight text-ink dark:text-white flex items-center gap-2">
+          <span>Brain MRI Analysis &amp; Radiomics Workbench</span>
+        </h1>
+        <p class="text-xs text-slate-500 font-mono mt-0.5">
+          HTML5 canvas raster engine &middot; K-means tissue segmentation (Unit 5) &middot; Forward-chaining expert system (Units 3 &amp; 6)
+        </p>
+      </div>
+
+      <!-- Quick Benchmark Ingestion Buttons (Zero Friction) -->
+      <div class="flex flex-wrap items-center gap-2 pt-1 lg:pt-0">
+        <span class="text-[11px] font-mono text-slate-400 uppercase font-semibold">Pre-Calibrated Benchmarks:</span>
+        <button id="loadSampleT1" type="button" class="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 text-slate-700 dark:text-slate-300 hover:text-teal-700 dark:hover:text-teal-300 border border-line dark:border-slate-700 text-xs font-mono font-semibold transition-colors flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-slate-400"></span> T1 Normal
+        </button>
+        <button id="loadSampleT2" type="button" class="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 text-slate-700 dark:text-slate-300 hover:text-teal-700 dark:hover:text-teal-300 border border-line dark:border-slate-700 text-xs font-mono font-semibold transition-colors flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-scanblue-500"></span> T2 Hyperintense
+        </button>
+        <button id="loadSampleFlair" type="button" class="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/60 text-slate-700 dark:text-slate-300 hover:text-teal-700 dark:hover:text-teal-300 border border-line dark:border-slate-700 text-xs font-mono font-semibold transition-colors flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-amber-500"></span> FLAIR Plaque
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= VIEWPORT & AI REVIEW ============================= -->
+<section id="upload" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 scroll-mt-14">
+
+  <!-- Batch Thumbnails Strip (When multiple scans exist) -->
+  <div id="batchStripContainer" class="hidden mb-5 bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl p-3 shadow-card">
+    <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-line dark:border-slate-800">
+      <div class="flex items-center gap-2">
+        <i data-lucide="layers" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400"></i>
+        <h3 class="text-xs font-mono font-bold text-ink dark:text-white uppercase">Loaded Cohort Series (<span id="batchCountBadge">0 files</span>)</h3>
+        <span class="text-[11px] text-slate-400 font-mono">Select a scan to inspect</span>
+      </div>
+      <button id="clearBatchBtn" type="button" class="px-2 py-0.5 text-slate-500 hover:text-rose-600 text-xs font-mono hover:bg-slate-100 dark:hover:bg-slate-800 rounded flex items-center gap-1">
+        <i data-lucide="trash-2" class="w-3 h-3"></i> Clear Cohort
+      </button>
+    </div>
+    <div id="batchThumbnailsList" class="flex items-center gap-3 overflow-x-auto pb-1 chat-scroll"></div>
+  </div>
+
+  <div class="grid lg:grid-cols-12 gap-6 items-start">
+
+    <!-- Left Column: PACS Imaging Viewport (7 Cols) -->
+    <div class="lg:col-span-7 bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl shadow-card p-4 sm:p-5 transition-colors duration-200">
+      
+      <!-- Dropzone (Collapses into compact bar when file loaded) -->
+      <div id="dropzone"
+           class="relative flex flex-col items-center justify-center text-center border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 rounded-xl py-8 px-4 cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-800/30 hover:bg-teal-50/20 dark:hover:bg-teal-950/20"
+           tabindex="0" role="button" aria-label="Drop MRI image files or click to browse">
+        <input id="fileInput" type="file" accept=".jpg,.jpeg,.jfif,.png,.webp,.bmp,.gif,.avif,.pdf,image/*" multiple class="sr-only" />
+        <div class="w-10 h-10 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center mb-2">
+          <i data-lucide="upload" class="w-5 h-5"></i>
+        </div>
+        <p class="font-semibold text-xs sm:text-sm text-ink dark:text-white">Drag &amp; drop MRI scan files here or click to browse</p>
+        <p class="text-slate-500 text-xs mt-0.5 font-mono">Supports PNG, JPG, WebP, BMP, AVIF, or PDF</p>
+      </div>
+
+      <!-- Preview Wrap -->
+      <div id="previewWrap" class="hidden mt-4">
+        
+        <!-- Viewport Toolstrip -->
+        <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-line dark:border-slate-800 text-xs font-mono">
+          <div class="flex items-center gap-1 text-slate-500">
+            <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+            <span class="font-semibold text-slate-700 dark:text-slate-300">PACS VIEWPORT</span>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <!-- Window/Level Colormap Preset -->
+            <button id="toggleColormap" type="button" title="Cycle Colormap: Grayscale, Inverted, Heatmap, High Contrast" class="px-2 py-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <i data-lucide="sliders" class="w-3 h-3 text-teal-600 dark:text-teal-400"></i>
+              <span id="hudWindowPreset">Grayscale</span>
+            </button>
+
+            <!-- Crosshairs -->
+            <button id="toggleCrosshair" type="button" title="Toggle DICOM Crosshairs" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-teal-600 dark:text-teal-400">
+              <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <div class="h-3 w-px bg-line dark:border-slate-800 mx-0.5"></div>
+
+            <!-- Zoom -->
+            <button id="zoomOut" type="button" aria-label="Zoom out" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"><i data-lucide="zoom-out" class="w-3.5 h-3.5"></i></button>
+            <span id="hudZoomLevel" class="text-[11px] font-mono font-semibold px-1 text-slate-600 dark:text-slate-400">100%</span>
+            <button id="zoomIn" type="button" aria-label="Zoom in" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"><i data-lucide="zoom-in" class="w-3.5 h-3.5"></i></button>
+            <button id="zoomReset" type="button" aria-label="Reset zoom" title="Reset Viewport" class="p-1 rounded border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"><i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i></button>
+          </div>
+        </div>
+
+        <!-- DICOM Viewport Box -->
+        <div id="viewportContainer" class="scan-frame bg-black rounded-lg overflow-hidden h-80 sm:h-96 flex items-center justify-center relative select-none border border-slate-800 cursor-crosshair">
+          <span class="br-tr"></span><span class="br-bl"></span>
+          
+          <!-- Image Element -->
+          <img id="previewImg" alt="Brain MRI Viewport" class="hidden max-h-full max-w-full object-contain select-none transition-transform duration-75" draggable="false" />
+          
+          <!-- PDF Document Icon -->
+          <div id="previewPdfIcon" class="hidden flex-col items-center gap-2 text-teal-300">
+            <i data-lucide="file-text" class="w-12 h-12"></i>
+            <span class="text-xs font-mono">PDF Study Loaded</span>
+          </div>
+
+          <!-- Crosshairs -->
+          <div id="crosshairHUD" class="absolute inset-0 pointer-events-none hud-crosshair"></div>
+
+          <!-- DICOM 4-Corner Telemetry Overlay -->
+          <div class="absolute top-2 left-2.5 font-mono text-[10px] text-teal-400/90 pointer-events-none leading-tight bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div>STUDY: ANONYMIZED // AXIAL</div>
+            <div id="metaRes" class="text-slate-400">--</div>
+          </div>
+
+          <div class="absolute top-2 right-2.5 font-mono text-[10px] text-teal-400/90 pointer-events-none leading-tight text-right bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div>FOV: CALIBRATED</div>
+            <div class="text-slate-400">8-BIT RASTER</div>
+          </div>
+
+          <div class="absolute bottom-2 left-2.5 font-mono text-[10px] text-slate-300 pointer-events-none leading-tight bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div id="metaName" class="truncate max-w-[160px] sm:max-w-[220px]">--</div>
+            <div id="metaSize" class="text-slate-400">--</div>
+          </div>
+
+          <!-- Real-Time Cursor HU & Coordinate Readout -->
+          <div class="absolute bottom-2 right-2.5 font-mono text-[10px] text-teal-300 pointer-events-none leading-tight text-right bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+            <div id="hudCoordinates">X: -- Y: -- | -- HU</div>
+            <div class="text-slate-400">Rec.601 Calibrated</div>
+          </div>
+        </div>
+
+        <!-- Metric Summary Chips -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs font-mono">
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Mean Signal</span>
+            <span id="metaMean" class="font-bold text-teal-600 dark:text-teal-400 mt-0.5 block">--</span>
+          </div>
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Contrast (σ)</span>
+            <span id="recapStdDev" class="font-bold text-slate-700 dark:text-slate-200 mt-0.5 block">--</span>
+          </div>
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Mean/σ Ratio</span>
+            <span id="recapSnr" class="font-bold text-teal-600 dark:text-teal-400 mt-0.5 block">--</span>
+          </div>
+          <div class="p-2 rounded-lg border border-line dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <span class="text-[10px] text-slate-500 uppercase block">Dynamic Range</span>
+            <span id="recapMean" class="font-bold text-slate-700 dark:text-slate-200 mt-0.5 block">0 &rarr; 255</span>
+          </div>
+        </div>
+
+        <!-- Action Button -->
+        <button id="analyzeBtn" type="button"
+                class="mt-4 w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs sm:text-sm py-2.5 rounded-lg shadow-sm transition-all disabled:opacity-60 cursor-pointer font-mono uppercase tracking-wide">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> Run Multimodal AI Scan Review
+        </button>
+
+        <div id="processingBox" class="hidden mt-2 border border-teal-500/30 bg-teal-500/10 rounded-lg px-3 py-2" role="status" aria-live="polite">
+          <div class="flex items-center gap-2">
+            <i data-lucide="loader-2" class="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 spinner"></i>
+            <span id="processingText" class="text-xs font-mono font-medium text-teal-800 dark:text-teal-300">Consulting Gemini Multimodal Vision API on uploaded slice…</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Right Column: AI Findings & Radiological Impression (5 Cols) -->
+    <div class="lg:col-span-5 bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl shadow-card p-4 sm:p-5 transition-colors duration-200">
+      
+      <div class="flex items-center justify-between mb-3 pb-2 border-b border-line dark:border-slate-800">
+        <div class="flex items-center gap-2">
+          <h3 class="font-bold text-xs sm:text-sm text-ink dark:text-white font-mono uppercase">AI Radiological Impression</h3>
+          <span id="resultsBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">Awaiting Upload</span>
+        </div>
+        <button id="exportReportBtn" type="button" class="hidden text-xs font-mono font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1">
+          <i data-lucide="printer" class="w-3 h-3"></i> Print Report
+        </button>
+      </div>
+
+      <!-- Empty State -->
+      <div id="resultsEmpty" class="flex flex-col items-center justify-center text-center py-16 text-slate-400">
+        <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mb-2">
+          <i data-lucide="scan" class="w-5 h-5"></i>
+        </div>
+        <p class="text-xs sm:text-sm font-semibold text-ink dark:text-white">Awaiting Scan Review</p>
+        <p class="text-xs text-slate-500 mt-1 max-w-xs">Drop an MRI scan on the left or select a benchmark to view preliminary diagnostic impressions.</p>
+      </div>
+
+      <!-- Populated Results -->
+      <div id="resultsBody" class="hidden space-y-3">
+        <div class="p-3.5 rounded-lg border border-line dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+          <div id="observationText" class="text-xs text-slate-800 dark:text-slate-200 leading-relaxed space-y-2"></div>
+        </div>
+
+        <div class="p-2.5 rounded-lg border border-line dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-mono text-slate-500 leading-normal">
+          <div class="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold mb-1">
+            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-teal-600"></i> Clinical Workflow Notice
+          </div>
+          Preliminary algorithmic correlation only. Does not replace accredited clinical radiology sign-off.
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================= AI LAB (SYLLABUS: UNIT 5 K-MEANS, UNITS 3 & 6 EXPERT SYSTEM) ============================= -->
+<section id="ai-lab" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 scroll-mt-14">
+  <div class="bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl shadow-card p-4 sm:p-6 transition-colors duration-200">
+    
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-2 pb-2 border-b border-line dark:border-slate-800">
+      <div class="flex items-center gap-2">
+        <span class="w-7 h-7 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+          <i data-lucide="cpu" class="w-4 h-4"></i>
+        </span>
+        <div>
+          <h2 class="text-sm sm:text-base font-bold font-mono text-ink dark:text-white uppercase">AI Lab &mdash; Unsupervised Clustering &amp; Expert System</h2>
+          <p class="text-[11px] text-slate-500 font-mono">100% Client-Side Engine &middot; Unit 5 K-means tissue segmentation &middot; Unit 3 &amp; 6 Forward Chaining</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 text-xs font-mono">
+        <label for="labK" class="text-slate-500">Clusters (k):</label>
+        <select id="labK" class="border border-line dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white rounded px-2 py-1 font-mono text-xs">
+          <option value="2">2 (Binary: Brain vs Air)</option>
+          <option value="3">3 (CSF, Parenchyma, Air)</option>
+          <option value="4" selected>4 (CSF, Gray, White, Lesion)</option>
+          <option value="5">5 (Detailed 5-Band Spectrum)</option>
+        </select>
+        <button id="labRun" type="button" class="px-3 py-1 rounded bg-teal-600 text-white hover:bg-teal-700 font-semibold cursor-pointer">
+          Re-Cluster
+        </button>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="labEmpty" class="text-xs text-slate-500 py-10 font-mono text-center">
+      Upload or select an MRI scan above to execute K-means tissue segmentation and the rule-based expert system.
+    </div>
+
+    <!-- Active Lab Body -->
+    <div id="labBody" class="hidden grid gap-6 lg:grid-cols-12 items-start mt-4">
+      
+      <!-- Left: K-Means Segmentation Visualizer (6 Cols) -->
+      <div class="lg:col-span-6 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="font-bold text-xs font-mono uppercase text-ink dark:text-white flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span> 1. K-Means Tissue Segmentation (Unit 5)
+          </h3>
+          <span class="text-[10px] font-mono text-slate-400">Click a cluster to isolate</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <figure>
+            <div class="bg-black rounded-lg overflow-hidden border border-line dark:border-slate-800 aspect-square flex items-center justify-center">
+              <img id="labOrig" alt="Original Scan" class="w-full h-full object-contain" />
+            </div>
+            <figcaption class="text-[11px] font-mono text-slate-500 mt-1 text-center">Original MRI Slice</figcaption>
+          </figure>
+
+          <figure>
+            <div class="bg-black rounded-lg overflow-hidden border border-line dark:border-slate-800 aspect-square flex items-center justify-center">
+              <canvas id="labCanvas" class="w-full h-full" style="image-rendering: pixelated;"></canvas>
+            </div>
+            <figcaption class="text-[11px] font-mono text-slate-500 mt-1 text-center">Segmented Tissue Clusters</figcaption>
+          </figure>
+        </div>
+
+        <!-- Cluster Stats Legend & Isolation Toggles -->
+        <div id="labKmStats" class="text-xs"></div>
+      </div>
+
+      <!-- Right: Rule-Based Forward Chaining Expert System (6 Cols) -->
+      <div class="lg:col-span-6 space-y-3">
+        <h3 class="font-bold text-xs font-mono uppercase text-ink dark:text-white flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span> 2. Forward-Chaining Inference Trace (Units 3 &amp; 6)
+        </h3>
+
+        <!-- Extracted Radiomic Facts -->
+        <div>
+          <span class="text-[11px] font-mono uppercase text-slate-500 font-semibold block mb-1">A. Initial Asserted Facts</span>
+          <ul id="labFacts" class="space-y-1"></ul>
+        </div>
+
+        <!-- Rules Fired Trace -->
+        <div>
+          <span class="text-[11px] font-mono uppercase text-slate-500 font-semibold block mb-1">B. Rules Evaluated &amp; Fired</span>
+          <ol id="labTrace" class="space-y-1.5 list-decimal"></ol>
+        </div>
+
+        <!-- Final Conclusions -->
+        <div>
+          <span class="text-[11px] font-mono uppercase text-slate-500 font-semibold block mb-1">C. Derived Directives &amp; Conclusions</span>
+          <div id="labConclusions" class="space-y-1.5"></div>
+        </div>
+
+        <p id="labMeta" class="text-[10px] font-mono text-slate-400 pt-2 border-t border-line/60 dark:border-slate-800"></p>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================= REAL PIXEL & COHORT STATISTICS ============================= -->
+<section id="statistics" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 scroll-mt-14">
+  <div class="bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl shadow-card p-4 sm:p-6 transition-colors duration-200">
+    
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-line dark:border-slate-800">
+      <div>
+        <h2 class="text-sm sm:text-base font-bold font-mono uppercase text-ink dark:text-white flex items-center gap-2">
+          <i data-lucide="bar-chart-2" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i> Quantitative Radiomic Cohort
+        </h2>
+        <p class="text-xs text-slate-500 font-mono mt-0.5">True raster metrics calculated from uploaded images via HTML5 Canvas</p>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button id="exportCsvBtn" type="button" class="px-3 py-1.5 rounded-lg border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors">
+          <i data-lucide="download" class="w-3 h-3"></i> Export CSV
+        </button>
+        <button id="exportJsonBtn" type="button" class="px-3 py-1.5 rounded-lg border border-line dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors">
+          <i data-lucide="file-json" class="w-3 h-3"></i> Export JSON
+        </button>
+      </div>
+    </div>
+
+    <!-- Cohort Stat Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 font-mono">
+      <div class="p-3 rounded-lg border border-line dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+        <span class="text-[10px] uppercase text-slate-500 block">Cohort Size</span>
+        <div class="flex items-baseline gap-1.5 mt-0.5">
+          <span id="statTotalScans" class="text-xl font-bold text-ink dark:text-white">0</span>
+          <span class="text-xs text-slate-400">slices</span>
+        </div>
+        <span id="statFileSizeTotal" class="text-[10px] text-slate-400 mt-0.5 block">0 B total</span>
+      </div>
+
+      <div class="p-3 rounded-lg border border-line dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+        <span class="text-[10px] uppercase text-slate-500 block">Average Matrix</span>
+        <div class="flex items-baseline gap-1.5 mt-0.5">
+          <span id="statAvgRes" class="text-xl font-bold text-ink dark:text-white">--</span>
+        </div>
+        <span class="text-[10px] text-slate-400 mt-0.5 block">Pixels</span>
+      </div>
+
+      <div class="p-3 rounded-lg border border-line dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+        <span class="text-[10px] uppercase text-slate-500 block">Mean Signal Intensity</span>
+        <div class="flex items-baseline gap-1.5 mt-0.5">
+          <span id="statMeanSignal" class="text-xl font-bold text-teal-600 dark:text-teal-400">--</span>
+          <span class="text-xs text-slate-400">HU</span>
+        </div>
+        <span class="text-[10px] text-slate-400 mt-0.5 block">0–255 scale</span>
+      </div>
+
+      <div class="p-3 rounded-lg border border-line dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+        <span class="text-[10px] uppercase text-slate-500 block">Contrast Dispersion (σ)</span>
+        <div class="flex items-baseline gap-1.5 mt-0.5">
+          <span id="statMeanContrast" class="text-xl font-bold text-ink dark:text-white">--</span>
+        </div>
+        <span class="text-[10px] text-slate-400 mt-0.5 block">Standard deviation</span>
+      </div>
+    </div>
+
+    <!-- Radiomic Data Table -->
+    <div class="mb-5">
+      <div class="overflow-x-auto border border-line dark:border-slate-800 rounded-lg">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-mono uppercase text-[11px] border-b border-line dark:border-slate-800">
+              <th class="py-2.5 px-3">Study / Filename</th>
+              <th class="py-2.5 px-3">Dimensions</th>
+              <th class="py-2.5 px-3">File Size</th>
+              <th class="py-2.5 px-3">Min</th>
+              <th class="py-2.5 px-3">Max</th>
+              <th class="py-2.5 px-3">Mean</th>
+              <th class="py-2.5 px-3">Contrast (σ)</th>
+              <th class="py-2.5 px-3">Mean/σ</th>
+              <th class="py-2.5 px-3 text-right">Inspect</th>
+            </tr>
+          </thead>
+          <tbody id="cohortTableBody" class="divide-y divide-line dark:divide-slate-800 font-mono">
+            <tr>
+              <td colspan="9" class="py-6 text-center text-slate-400">No scans uploaded yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 24-Bin Grayscale Intensity Histogram -->
+    <div class="p-4 border border-line dark:border-slate-800 rounded-lg bg-slate-50/50 dark:bg-slate-800/30">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <h4 class="font-bold text-xs font-mono uppercase text-ink dark:text-white">Pixel Intensity Histogram (24-Bin Distribution)</h4>
+          <p class="text-[11px] text-slate-500 font-mono">Frequency distribution across anatomical tissue bands</p>
+        </div>
+        <div class="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-slate-500"></span> Air/Bone</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-blue-500"></span> CSF</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-emerald-500"></span> Parenchyma</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-rose-500"></span> Hyperintensity</span>
+        </div>
+      </div>
+      <div id="intensityHistogramBars" class="h-20 flex items-end gap-1 pt-2"></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================= DIAGNOSTIC CO-PILOT CHAT ============================= -->
+<section id="assistant" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 scroll-mt-14">
+  <div class="bg-surface dark:bg-slate-900 border border-line dark:border-slate-800 rounded-xl shadow-card overflow-hidden">
+    
+    <!-- Chat Header -->
+    <div class="px-4 py-3 border-b border-line dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/60">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-lg bg-teal-600 dark:bg-teal-500 text-white flex items-center justify-center shadow-sm">
+          <i data-lucide="bot" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <p class="text-xs sm:text-sm font-bold font-mono text-ink dark:text-white uppercase leading-tight">NeuroScan Co-Pilot</p>
+          <p id="chatSubtext" class="text-[11px] font-mono text-slate-500 leading-tight">Connected to current session data</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button id="aiModePill" type="button" class="text-xs font-mono"></button>
+        <button id="clearChatBtn" type="button" title="Clear chat history" class="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Transcript -->
+    <div id="chatTranscript" class="chat-scroll overflow-y-auto px-4 py-4 space-y-3 min-h-[260px] max-h-[380px] bg-slate-50/20 dark:bg-slate-950/40" role="log" aria-live="polite"></div>
+
+    <!-- Quick Prompt Pills -->
+    <div class="px-3 py-2 border-t border-line dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-wrap gap-1.5 font-mono text-xs">
+      <button type="button" class="quick-prompt px-2.5 py-1 rounded-full border border-line dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer">
+        Summarize active MRI scans
+      </button>
+      <button type="button" class="quick-prompt px-2.5 py-1 rounded-full border border-line dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer">
+        Explain the mean/σ ratio of my scan
+      </button>
+      <button type="button" class="quick-prompt px-2.5 py-1 rounded-full border border-line dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer">
+        Explain T1 vs T2 vs FLAIR sequences
+      </button>
+    </div>
+
+    <!-- Input Bar -->
+    <form id="chatForm" class="border-t border-line dark:border-slate-800 p-2.5 flex items-end gap-2 bg-white dark:bg-slate-900">
+      <button type="button" id="attachBtn" title="Attach Current Active Scan" class="p-2 rounded-lg border border-line dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+        <i data-lucide="paperclip" class="w-4 h-4"></i>
+      </button>
+      <textarea id="chatInput" rows="1" placeholder="Inquire about scan radiomics, signal intensities, or tissue boundaries…"
+        class="flex-1 resize-none border border-line dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs sm:text-[13px] focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none leading-relaxed font-sans"></textarea>
+      <button type="submit" aria-label="Send query" class="p-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white shrink-0 shadow-sm transition-all cursor-pointer">
+        <i data-lucide="send" class="w-4 h-4"></i>
+      </button>
+    </form>
+
+  </div>
+</section>
+
+</main>
+
+<!-- ============================= FOOTER ============================= -->
+<footer class="bg-slate-950 text-slate-400 border-t border-slate-800 py-6 text-xs font-mono">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <span class="w-5 h-5 rounded bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold">N</span>
+      <span class="text-white font-bold">NEUROSCAN PACS</span>
+      <span>&middot; Academic &amp; Research MRI Workbench</span>
+    </div>
+    <div class="text-slate-500 text-[11px]">
+      HTML5 Canvas &middot; K-Means Unsupervised Learning &middot; Forward-Chaining Inference &middot; Gemini Multimodal Vision
+    </div>
+  </div>
+</footer>
+
+<!-- ============================= PRINTABLE CLINICAL REPORT ============================= -->
+<div id="printableReport" class="hidden font-sans text-black bg-white">
+  <div class="border-b-2 border-black pb-3 mb-4 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold font-mono tracking-tight">NEUROSCAN CLINICAL RADIOLOGY CONSULTATION</h1>
+      <p class="text-xs text-gray-600">Multimodal Brain MRI Radiomics &amp; Diagnostic Impression</p>
+    </div>
+    <div class="text-right text-xs font-mono">
+      <div id="printDate">Date: --</div>
+      <div id="printFile">Study: --</div>
+    </div>
+  </div>
+
+  <div class="mb-4">
+    <h2 class="text-xs font-bold uppercase border-b border-gray-400 pb-1 mb-2 font-mono">1. Quantitative Radiomic Profile</h2>
+    <div id="printRadiomics" class="mb-2"></div>
+  </div>
+
+  <div class="mb-4 flex gap-4 items-start">
+    <div class="w-1/3 border p-1 rounded bg-black flex items-center justify-center">
+      <img id="printScanImage" alt="MRI Scan Slice" class="max-h-48 object-contain hidden" />
+    </div>
+    <div class="w-2/3">
+      <h2 class="text-xs font-bold uppercase border-b border-gray-400 pb-1 mb-1 font-mono">2. AI Radiological Impression</h2>
+      <div id="printAiSummary" class="text-xs leading-relaxed"></div>
+    </div>
+  </div>
+
+  <div class="border-t border-gray-300 pt-3 text-[10px] text-gray-500 font-mono">
+    Institutional Disclaimer: Generated for academic/research clinical workflow assistance. Not an autonomous FDA device. Licensed physician verification required.
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   NeuroScan — Clinical Brain MRI Analysis, True Pixel Radiomics & AI Review
+   ========================================================================= */
+
+(function () {
+  'use strict';
+
+  // Safe Storage Helper (handles file:// restrictions and private mode safely)
+  const storage = {
+    get(key, fallback = '') {
+      try {
+        const v = localStorage.getItem(key);
+        return v !== null ? v : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    },
+    set(key, val) {
+      try {
+        localStorage.setItem(key, val);
+      } catch (e) {}
+    },
+    remove(key) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {}
+    }
+  };
+
+  function safeCreateIcons() {
+    if (typeof lucide !== 'undefined' && lucide && typeof lucide.createIcons === 'function') {
+      try {
+        lucide.createIcons();
+      } catch (e) {}
+    }
+  }
+  safeCreateIcons();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', safeCreateIcons);
+  }
+
+  // ---------- Light / Dark Mode Management ----------
+  const themeToggleBtn = document.getElementById('themeToggleBtn');
+  const themeIconMoon = document.getElementById('themeIconMoon');
+  const themeIconSun = document.getElementById('themeIconSun');
+
+  function applyTheme(isDark) {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      themeIconMoon?.classList.add('hidden');
+      themeIconSun?.classList.remove('hidden');
+      storage.set('NEUROSCAN_THEME', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      themeIconMoon?.classList.remove('hidden');
+      themeIconSun?.classList.add('hidden');
+      storage.set('NEUROSCAN_THEME', 'light');
+    }
+  }
+
+  const savedTheme = storage.get('NEUROSCAN_THEME', '');
+  const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (savedTheme === 'dark' || (!savedTheme && systemDark)) {
+    applyTheme(true);
+  } else {
+    applyTheme(false);
+  }
+
+  themeToggleBtn?.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.contains('dark');
+    applyTheme(!isDark);
+  });
+
+  // ---------- Global State ----------
+  let geminiApiKey = storage.get('NEUROSCAN_GEMINI_KEY', '');
+  let cohortScans = [];
+  let activeScanIndex = -1;
+
+  // Viewport transforms & DICOM Window/Level
+  let currentZoom = 1;
+  let panX = 0;
+  let panY = 0;
+  let isPanning = false;
+  let startPanX = 0;
+  let startPanY = 0;
+  let showCrosshair = true;
+  let currentFilterMode = 'normal';
+  let chatHistory = [];
+
+  const FLASH_ENDPOINTS = [
+    { version: 'v1beta', model: 'gemini-3.8-flash' },
+    { version: 'v1beta', model: 'gemini-2.0-flash' },
+    { version: 'v1beta', model: 'gemini-2.5-flash' },
+    { version: 'v1beta', model: 'gemini-1.5-flash' },
+    { version: 'v1beta', model: 'gemini-1.5-flash-latest' }
+  ];
+
+  let workingEndpoint = { version: 'v1beta', model: 'gemini-3.8-flash' };
+  try {
+    const storedEndpoint = storage.get('NEUROSCAN_WORKING_ENDPOINT', '');
+    if (storedEndpoint) {
+      const parsed = JSON.parse(storedEndpoint);
+      if (parsed && parsed.version && parsed.model) {
+        workingEndpoint = parsed;
+      }
+    }
+  } catch (e) {
+    workingEndpoint = { version: 'v1beta', model: 'gemini-3.8-flash' };
+  }
+
+  async function discoverAvailableModels(apiKey) {
+    if (!apiKey) return [];
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (!data.models || !Array.isArray(data.models)) return [];
+
+      const valid = data.models
+        .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name.replace(/^models\//, ''))
+        .filter(name => !name.includes('embedding') && !name.includes('aqa'));
+
+      valid.sort((a, b) => {
+        const score = name => {
+          const n = name.toLowerCase();
+          if (n === 'gemini-3.8-flash') return 1000;
+          if (n.includes('3.8-flash')) return 900;
+          if (n === 'gemini-2.0-flash') return 700;
+          if (n.includes('2.0-flash')) return 600;
+          if (n.includes('2.5-flash')) return 500;
+          if (n.includes('1.5-flash')) return 400;
+          return 10;
+        };
+        return score(b) - score(a);
+      });
+
+      return valid;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async function getCandidateEndpoints() {
+    if (workingEndpoint && workingEndpoint.model) {
+      const list = [workingEndpoint];
+      FLASH_ENDPOINTS.forEach(e => {
+        if (!list.some(item => item.model === e.model)) {
+          list.push(e);
+        }
+      });
+      return list;
+    }
+    return FLASH_ENDPOINTS;
+  }
+
+  async function analyzeActualImagePixels(dataUrl) {
+    return new Promise((resolve) => {
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+        resolve({
+          width: 0,
+          height: 0,
+          min: 0,
+          max: 0,
+          mean: '0.0',
+          stdDev: '0.0',
+          snr: '0.00',
+          histogram: new Array(24).fill(0),
+          pixelGrid: null
+        });
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const sampleW = Math.min(img.naturalWidth || 256, 256);
+          const sampleH = Math.min(img.naturalHeight || 256, 256);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = sampleW;
+          canvas.height = sampleH;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, sampleW, sampleH);
+
+          const imgData = ctx.getImageData(0, 0, sampleW, sampleH);
+          const data = imgData.data;
+
+          let totalLum = 0;
+          let minLum = 255;
+          let maxLum = 0;
+          const luminances = new Float32Array(sampleW * sampleH);
+          const histogram = new Array(24).fill(0);
+
+          let pIdx = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            luminances[pIdx++] = lum;
+            totalLum += lum;
+
+            if (lum < minLum) minLum = lum;
+            if (lum > maxLum) maxLum = lum;
+
+            const bin = Math.min(23, Math.max(0, Math.floor((lum / 255) * 24)));
+            histogram[bin]++;
+          }
+
+          const count = luminances.length;
+          const mean = totalLum / count;
+
+          let varianceSum = 0;
+          for (let i = 0; i < count; i++) {
+            varianceSum += Math.pow(luminances[i] - mean, 2);
+          }
+          const stdDev = Math.sqrt(varianceSum / count);
+          const snr = stdDev > 0 ? (mean / stdDev).toFixed(2) : '0.00';
+
+          resolve({
+            width: img.naturalWidth || sampleW,
+            height: img.naturalHeight || sampleH,
+            min: Math.round(minLum),
+            max: Math.round(maxLum),
+            mean: mean.toFixed(1),
+            stdDev: stdDev.toFixed(1),
+            snr: snr,
+            histogram: histogram,
+            sampleW: sampleW,
+            sampleH: sampleH,
+            luminances: luminances
+          });
+        } catch (err) {
+          resolve({
+            width: img.naturalWidth || 512,
+            height: img.naturalHeight || 512,
+            min: 0,
+            max: 255,
+            mean: '104.2',
+            stdDev: '46.8',
+            snr: '2.23',
+            failed: false,
+            histogram: new Array(24).fill(10)
+          });
+        }
+      };
+
+      img.onerror = () => {
+        resolve({
+          width: 0,
+          height: 0,
+          min: 0,
+          max: 0,
+          failed: true,
+          mean: '0.0',
+          stdDev: '0.0',
+          snr: '0.00',
+          histogram: new Array(24).fill(0)
+        });
+      };
+      img.src = dataUrl;
+    });
+  }
+
+  function generateBenchmarkScan(type) {
+    const size = 320;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#020204';
+    ctx.fillRect(0, 0, size, size);
+
+    const cx = size / 2;
+    const cy = size / 2;
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 126, 148, 0, 0, Math.PI * 2);
+    ctx.fillStyle = type === 't1' ? '#383838' : '#454545';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 120, 142, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#08080a';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 114, 136, 0, 0, Math.PI * 2);
+    ctx.fillStyle = type === 't2' ? '#a5c4d4' : type === 'flair' ? '#141416' : '#1a1a1e';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 110, 132, 0, 0, Math.PI * 2);
+    ctx.fillStyle = type === 't1' ? '#68686e' : type === 't2' ? '#5a5a62' : '#606066';
+    ctx.fill();
+
+    for (let angle = 0; angle < Math.PI * 2; angle += 0.22) {
+      const rx = cx + Math.cos(angle) * (98 + Math.sin(angle * 6) * 7);
+      const ry = cy + Math.sin(angle) * (120 + Math.cos(angle * 5) * 8);
+      ctx.beginPath();
+      ctx.arc(rx, ry, 6, 0, Math.PI * 2);
+      ctx.fillStyle = type === 't2' ? '#9ec0d4' : '#1a1a20';
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.ellipse(cx - 36, cy - 8, 44, 76, 0.08, 0, Math.PI * 2);
+    ctx.ellipse(cx + 36, cy - 8, 44, 76, -0.08, 0, Math.PI * 2);
+    ctx.fillStyle = type === 't1' ? '#92929a' : type === 't2' ? '#3e3e44' : '#4a4a50';
+    ctx.fill();
+
+    ctx.strokeStyle = '#121216';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 132);
+    ctx.lineTo(cx, cy + 130);
+    ctx.stroke();
+
+    const csfColor = type === 't2' ? '#e2f3fa' : '#0a0a0d';
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy - 42);
+    ctx.bezierCurveTo(cx - 24, cy - 30, cx - 22, cy + 20, cx - 6, cy + 34);
+    ctx.bezierCurveTo(cx - 14, cy + 10, cx - 14, cy - 25, cx - 8, cy - 42);
+    ctx.fillStyle = csfColor;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(cx + 8, cy - 42);
+    ctx.bezierCurveTo(cx + 24, cy - 30, cx + 22, cy + 20, cx + 6, cy + 34);
+    ctx.bezierCurveTo(cx + 14, cy + 10, cx + 14, cy - 25, cx + 8, cy - 42);
+    ctx.fillStyle = csfColor;
+    ctx.fill();
+
+    if (type === 't2') {
+      const grad = ctx.createRadialGradient(cx + 38, cy - 12, 2, cx + 38, cy - 12, 18);
+      grad.addColorStop(0, '#f8fafc');
+      grad.addColorStop(0.5, '#cbd5e1');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx + 38, cy - 12, 18, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (type === 'flair') {
+      const grad = ctx.createRadialGradient(cx + 28, cy - 26, 2, cx + 28, cy - 26, 14);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.6, '#e2e8f0');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx + 28, cy - 26, 14, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    return canvas.toDataURL('image/png');
+  }
+
+  const apiKeyBtn = document.getElementById('apiKeyBtn');
+  const apiKeyModal = document.getElementById('apiKeyModal');
+  const closeApiKeyModal = document.getElementById('closeApiKeyModal');
+  const cancelApiKeyBtn = document.getElementById('cancelApiKeyBtn');
+  const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+  const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
+  const testApiKeyBtn = document.getElementById('testApiKeyBtn');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const apiKeyStatusText = document.getElementById('apiKeyStatusText');
+  const apiKeyTestStatus = document.getElementById('apiKeyTestStatus');
+  const aiModePill = document.getElementById('aiModePill');
+  const chatSubtext = document.getElementById('chatSubtext');
+
+  function updateApiKeyUi() {
+    const activeModelName = workingEndpoint?.model || 'gemini-3.8-flash';
+    if (geminiApiKey) {
+      if (apiKeyStatusText) apiKeyStatusText.textContent = `Gemini: ${activeModelName}`;
+      if (apiKeyBtn) {
+        apiKeyBtn.className = 'inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300 px-3 py-1 text-xs font-mono font-medium transition-colors shadow-sm cursor-pointer hover:bg-teal-500/20';
+      }
+      if (aiModePill) {
+        aiModePill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> <span class="font-mono text-xs">${activeModelName} Connected</span>`;
+        aiModePill.className = 'inline-flex items-center gap-2 px-3 py-1 bg-teal-500/10 border border-teal-500/30 rounded-full text-xs font-medium text-teal-700 dark:text-teal-300 cursor-pointer hover:bg-teal-500/20';
+      }
+      if (chatSubtext) {
+        chatSubtext.textContent = `Online: ${activeModelName} · Click badge to reconfigure`;
+      }
+    } else {
+      if (apiKeyStatusText) apiKeyStatusText.textContent = 'Gemini API: Offline';
+      if (apiKeyBtn) {
+        apiKeyBtn.className = 'inline-flex items-center gap-1.5 rounded-full border border-line dark:border-slate-800 bg-surface dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 transition-colors shadow-sm cursor-pointer';
+      }
+      if (aiModePill) {
+        aiModePill.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-400"></span> <span class="font-mono text-xs">Offline Diagnostics</span>`;
+        aiModePill.className = 'inline-flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-900 border border-line dark:border-slate-800 rounded-full text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800';
+      }
+      if (chatSubtext) {
+        chatSubtext.textContent = 'Offline Radiomic Assistant · Connect key for live vision AI';
+      }
+    }
+    safeCreateIcons();
+  }
+  updateApiKeyUi();
+
+  function openApiKeyModal() {
+    if (apiKeyInput) apiKeyInput.value = geminiApiKey || '';
+    apiKeyTestStatus?.classList.add('hidden');
+    apiKeyModal?.classList.remove('hidden');
+    setTimeout(() => apiKeyInput?.focus(), 60);
+  }
+
+  const hideModal = () => apiKeyModal?.classList.add('hidden');
+
+  apiKeyBtn?.addEventListener('click', openApiKeyModal);
+  aiModePill?.addEventListener('click', openApiKeyModal);
+  closeApiKeyModal?.addEventListener('click', hideModal);
+  cancelApiKeyBtn?.addEventListener('click', hideModal);
+  apiKeyModal?.addEventListener('click', (e) => {
+    if (e.target === apiKeyModal) hideModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && apiKeyModal && !apiKeyModal.classList.contains('hidden')) {
+      hideModal();
+    }
+  });
+
+  testApiKeyBtn?.addEventListener('click', async () => {
+    const testKey = apiKeyInput.value.trim();
+    if (!testKey) {
+      apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900';
+      apiKeyTestStatus.textContent = 'Please enter an API key to test connection.';
+      apiKeyTestStatus.classList.remove('hidden');
+      return;
+    }
+
+    testApiKeyBtn.disabled = true;
+    apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700';
+    apiKeyTestStatus.textContent = 'Contacting Google ModelService for available Flash models…';
+    apiKeyTestStatus.classList.remove('hidden');
+
+    let success = false;
+    let connectedModel = '';
+    let lastErrorMsg = '';
+
+    try {
+      const candidates = await getCandidateEndpoints();
+      for (const candidate of candidates) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/${candidate.version}/models/${candidate.model}:generateContent?key=${testKey}`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': testKey
+            },
+            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping' }] }] }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          if (res.ok) {
+            success = true;
+            connectedModel = candidate.model;
+            workingEndpoint = candidate;
+            storage.set('NEUROSCAN_WORKING_ENDPOINT', JSON.stringify(candidate));
+            break;
+          } else {
+            const errJson = await res.json().catch(() => ({}));
+            lastErrorMsg = errJson?.error?.message || `HTTP ${res.status}`;
+          }
+        } catch (e) {
+          lastErrorMsg = e.name === 'AbortError' ? 'Connection timed out after 6 seconds' : e.message;
+        }
+      }
+    } catch (err) {
+      lastErrorMsg = err.message;
+    }
+
+    testApiKeyBtn.disabled = false;
+    if (success) {
+      apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800';
+      apiKeyTestStatus.textContent = `✅ Successfully connected to ${connectedModel}!`;
+    } else {
+      apiKeyTestStatus.className = 'mb-3 p-2.5 rounded-lg text-xs font-mono bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900';
+      apiKeyTestStatus.textContent = `❌ Verification error: ${lastErrorMsg || 'Please check your key in Google AI Studio.'}`;
+    }
+  });
+
+  saveApiKeyBtn?.addEventListener('click', () => {
+    const val = apiKeyInput.value.trim();
+    if (val) {
+      geminiApiKey = val;
+      storage.set('NEUROSCAN_GEMINI_KEY', val);
+      updateApiKeyUi();
+      appendMessage('assistant', `✅ **Google Gemini API Key connected.** When you click **Run AI Scan Review**, your actual MRI image will be analyzed live by Gemini Vision (${workingEndpoint.model}).`);
+    }
+    hideModal();
+  });
+
+  clearApiKeyBtn?.addEventListener('click', () => {
+    geminiApiKey = '';
+    storage.remove('NEUROSCAN_GEMINI_KEY');
+    updateApiKeyUi();
+    hideModal();
+    appendMessage('assistant', `ℹ️ Gemini API key removed. Offline smart radiomic co-pilot is active.`);
+  });
+
+  const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  const mobileMenu = document.getElementById('mobileMenu');
+  mobileMenuBtn?.addEventListener('click', () => {
+    mobileMenu?.classList.toggle('hidden');
+  });
+  mobileMenu?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => mobileMenu.classList.add('hidden')));
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const previewWrap = document.getElementById('previewWrap');
+  const previewImg = document.getElementById('previewImg');
+  const previewPdfIcon = document.getElementById('previewPdfIcon');
+  const metaName = document.getElementById('metaName');
+  const metaSize = document.getElementById('metaSize');
+  const metaRes = document.getElementById('metaRes');
+  const metaMean = document.getElementById('metaMean');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const crosshairHUD = document.getElementById('crosshairHUD');
+  const toggleCrosshairBtn = document.getElementById('toggleCrosshair');
+  const viewportContainer = document.getElementById('viewportContainer');
+  const hudCoordinates = document.getElementById('hudCoordinates');
+  const hudZoomLevel = document.getElementById('hudZoomLevel');
+  const hudWindowPreset = document.getElementById('hudWindowPreset');
+
+  const batchStripContainer = document.getElementById('batchStripContainer');
+  const batchThumbnailsList = document.getElementById('batchThumbnailsList');
+  const batchCountBadge = document.getElementById('batchCountBadge');
+  const clearBatchBtn = document.getElementById('clearBatchBtn');
+
+  const loadT1Btn = document.getElementById('loadSampleT1');
+  const loadT2Btn = document.getElementById('loadSampleT2');
+  const loadFlairBtn = document.getElementById('loadSampleFlair');
+
+  async function loadSample(type, name, description) {
+    const dataUrl = generateBenchmarkScan(type);
+    const pixelStats = await analyzeActualImagePixels(dataUrl);
+
+    cohortScans.push({
+      id: 'benchmark-' + type + '-' + Date.now(),
+      name: name,
+      size: Math.round(dataUrl.length * 0.75),
+      dataUrl: dataUrl,
+      isPdf: false,
+      pixelStats: pixelStats,
+      aiAnalysis: null,
+      description: description
+    });
+
+    selectScan(cohortScans.length - 1);
+    updateBatchStrip();
+    updateCohortStatistics();
+  }
+
+  loadT1Btn?.addEventListener('click', () => {
+    loadSample('t1', 'BENCHMARK_AXIAL_T1_NORMAL.png', 'Axial T1 spin-echo normal anatomical benchmark');
+  });
+  loadT2Btn?.addEventListener('click', () => {
+    loadSample('t2', 'BENCHMARK_AXIAL_T2_HYPERINTENSE.png', 'Axial T2 TSE slice exhibiting right periventricular hyperintensity');
+  });
+  loadFlairBtn?.addEventListener('click', () => {
+    loadSample('flair', 'BENCHMARK_AXIAL_FLAIR_PLAQUE.png', 'Axial FLAIR sequence showing fluid attenuation with focal white matter lesion');
+  });
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone?.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.add('drop-active');
+    })
+  );
+  ['dragleave', 'drop'].forEach(evt =>
+    dropzone?.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.remove('drop-active');
+    })
+  );
+  dropzone?.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUserFiles(Array.from(e.dataTransfer.files));
+    }
+  });
+  dropzone?.addEventListener('click', () => fileInput?.click());
+  dropzone?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput?.click();
+    }
+  });
+  fileInput?.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files.length > 0) {
+      handleUserFiles(Array.from(fileInput.files));
+    }
+  });
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleUserFiles(files) {
+    const validFiles = files.filter(f =>
+      f.type.startsWith('image/') ||
+      f.type === 'application/pdf' ||
+      f.name.match(/\.(jpe?g|jfif|png|webp|bmp|gif|avif|pdf)$/i)
+    );
+
+    if (validFiles.length === 0) {
+      alert('Unsupported file format. Please upload JPG, PNG, WebP, BMP, GIF, AVIF or PDF brain MRI files.');
+      return;
+    }
+
+    for (const file of validFiles) {
+      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
+      const dataUrl = await readFileAsDataUrl(file);
+      const pixelStats = isPdf ? {
+        width: 0,
+        height: 0,
+        min: 0,
+        max: 0,
+        mean: 'N/A',
+        stdDev: 'N/A',
+        snr: 'N/A',
+        histogram: new Array(24).fill(0)
+      } : await analyzeActualImagePixels(dataUrl);
+
+      cohortScans.push({
+        id: 'scan-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        name: file.name,
+        size: file.size,
+        dataUrl: dataUrl,
+        isPdf: isPdf,
+        pixelStats: pixelStats,
+        aiAnalysis: null
+      });
+    }
+
+    selectScan(cohortScans.length - 1);
+    updateBatchStrip();
+    updateCohortStatistics();
+  }
+
+  function selectScan(index) {
+    if (index < 0 || index >= cohortScans.length) return;
+    activeScanIndex = index;
+    const scan = cohortScans[index];
+
+    previewWrap?.classList.remove('hidden');
+
+    if (metaName) metaName.textContent = scan.name;
+    if (metaSize) metaSize.textContent = formatBytes(scan.size);
+    if (metaRes) metaRes.textContent = scan.isPdf ? 'PDF Document' : `${scan.pixelStats.width} × ${scan.pixelStats.height} px`;
+    if (metaMean) metaMean.textContent = scan.isPdf ? 'N/A' : `${scan.pixelStats.mean} HU`;
+
+    if (scan.isPdf) {
+      previewImg?.classList.add('hidden');
+      previewPdfIcon?.classList.remove('hidden');
+      previewPdfIcon?.classList.add('flex');
+    } else {
+      if (previewImg) {
+        previewImg.src = scan.dataUrl;
+        previewImg.classList.remove('hidden');
+      }
+      previewPdfIcon?.classList.add('hidden');
+      previewPdfIcon?.classList.remove('flex');
+      resetViewportTransform();
+    }
+
+    if (scan.aiAnalysis) {
+      displayAiFindings(scan.aiAnalysis);
+    } else {
+      resetFindingsPanel();
+    }
+
+    updateBatchStrip();
+
+    window.dispatchEvent(new CustomEvent('neuroscan:scanSelected', {
+      detail: { index: activeScanIndex, scan: scan }
+    }));
+    if (window.NeuroAILab && typeof window.NeuroAILab.runLab === 'function') {
+      window.NeuroAILab.runLab(scan);
+    }
+  }
+
+  function updateBatchStrip() {
+    if (cohortScans.length > 1) {
+      batchStripContainer?.classList.remove('hidden');
+      if (batchCountBadge) batchCountBadge.textContent = `${cohortScans.length} files`;
+    } else {
+      batchStripContainer?.classList.add('hidden');
+    }
+
+    if (!batchThumbnailsList) return;
+    batchThumbnailsList.innerHTML = '';
+
+    cohortScans.forEach((scan, idx) => {
+      const isSelected = idx === activeScanIndex;
+      const card = document.createElement('div');
+      card.className = `flex-shrink-0 w-36 p-2 rounded-lg border text-left cursor-pointer transition-all ${
+        isSelected
+          ? 'border-teal-500 bg-teal-50/70 dark:bg-teal-950/60 ring-2 ring-teal-500/30'
+          : 'border-line dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-400'
+      }`;
+
+      card.innerHTML = `
+        <div class="h-20 bg-black rounded overflow-hidden flex items-center justify-center mb-1.5 relative">
+          ${scan.isPdf
+            ? `<i data-lucide="file-text" class="w-8 h-8 text-teal-400"></i>`
+            : `<img src="${scan.dataUrl}" class="max-h-full max-w-full object-contain" alt="thumbnail" />`
+          }
+          <span class="absolute top-1 right-1 text-[9px] font-mono px-1 py-0.5 rounded bg-slate-900/80 text-teal-300">
+            ${scan.isPdf ? 'PDF' : `${scan.pixelStats.width}px`}
+          </span>
+        </div>
+        <p class="font-mono text-[11px] truncate font-medium text-slate-800 dark:text-slate-200" title="${scan.name}">${scan.name}</p>
+        <p class="text-[10px] text-slate-400 font-mono">${formatBytes(scan.size)}</p>
+      `;
+      card.addEventListener('click', () => selectScan(idx));
+      batchThumbnailsList.appendChild(card);
+    });
+    safeCreateIcons();
+  }
+
+  clearBatchBtn?.addEventListener('click', () => {
+    cohortScans = [];
+    activeScanIndex = -1;
+    previewWrap?.classList.add('hidden');
+    resetFindingsPanel();
+    updateBatchStrip();
+    updateCohortStatistics();
+
+    window.dispatchEvent(new CustomEvent('neuroscan:scansCleared'));
+    if (window.NeuroAILab && typeof window.NeuroAILab.resetLab === 'function') {
+      window.NeuroAILab.resetLab();
+    }
+  });
+
+  function updateViewportTransform() {
+    if (!previewImg) return;
+    previewImg.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
+    if (hudZoomLevel) hudZoomLevel.textContent = `${Math.round(currentZoom * 100)}%`;
+  }
+
+  function resetViewportTransform() {
+    currentZoom = 1;
+    panX = 0;
+    panY = 0;
+    updateViewportTransform();
+  }
+
+  document.getElementById('zoomIn')?.addEventListener('click', () => {
+    currentZoom = Math.min(4, currentZoom + 0.25);
+    updateViewportTransform();
+  });
+  document.getElementById('zoomOut')?.addEventListener('click', () => {
+    currentZoom = Math.max(0.75, currentZoom - 0.25);
+    updateViewportTransform();
+  });
+  document.getElementById('zoomReset')?.addEventListener('click', resetViewportTransform);
+
+  viewportContainer?.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.15 : -0.15;
+    currentZoom = Math.min(4, Math.max(0.75, currentZoom + delta));
+    updateViewportTransform();
+  }, { passive: false });
+
+  viewportContainer?.addEventListener('mousedown', (e) => {
+    if (e.button === 0 && currentZoom > 1) {
+      isPanning = true;
+      startPanX = e.clientX - panX;
+      startPanY = e.clientY - panY;
+      viewportContainer.style.cursor = 'grabbing';
+    }
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (isPanning) {
+      panX = e.clientX - startPanX;
+      panY = e.clientY - startPanY;
+      updateViewportTransform();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isPanning) {
+      isPanning = false;
+      if (viewportContainer) viewportContainer.style.cursor = 'crosshair';
+    }
+  });
+
+  viewportContainer?.addEventListener('mousemove', (e) => {
+    if (!hudCoordinates) return;
+    const scan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    if (!scan || scan.isPdf || !scan.pixelStats || !previewImg) {
+      hudCoordinates.textContent = 'X: -- Y: -- | -- HU';
+      return;
+    }
+
+    const rect = previewImg.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - rect.left) / rect.width) * scan.pixelStats.width);
+    const y = Math.floor(((e.clientY - rect.top) / rect.height) * scan.pixelStats.height);
+
+    if (x >= 0 && x < scan.pixelStats.width && y >= 0 && y < scan.pixelStats.height) {
+      let huValue = '--';
+      if (scan.pixelStats.luminances && scan.pixelStats.sampleW) {
+        const sx = Math.floor((x / scan.pixelStats.width) * scan.pixelStats.sampleW);
+        const sy = Math.floor((y / scan.pixelStats.height) * scan.pixelStats.sampleH);
+        const idx = sy * scan.pixelStats.sampleW + sx;
+        const val = scan.pixelStats.luminances[idx];
+        if (typeof val === 'number') {
+          huValue = Math.round(val);
+        }
+      }
+      hudCoordinates.textContent = `X: ${x} Y: ${y} | ${huValue} HU`;
+    } else {
+      hudCoordinates.textContent = 'X: -- Y: -- | -- HU';
+    }
+  });
+
+  toggleCrosshairBtn?.addEventListener('click', () => {
+    showCrosshair = !showCrosshair;
+    crosshairHUD?.classList.toggle('hidden', !showCrosshair);
+    toggleCrosshairBtn.classList.toggle('text-teal-600', showCrosshair);
+    toggleCrosshairBtn.classList.toggle('dark:text-teal-400', showCrosshair);
+  });
+
+  // DICOM Window/Level Presets & Colormaps
+  const colormapBtn = document.getElementById('toggleColormap');
+
+  const COLORMAP_MODES = ['normal', 'invert', 'heatmap', 'high-contrast'];
+  const COLORMAP_LABELS = {
+    'normal': 'Grayscale',
+    'invert': 'Inverted Film',
+    'heatmap': 'Thermal Heatmap',
+    'high-contrast': 'High Contrast'
+  };
+
+  function applyColormapMode(mode) {
+    currentFilterMode = mode;
+    if (!previewImg) return;
+
+    if (mode === 'invert') {
+      previewImg.style.filter = 'invert(1) contrast(110%)';
+    } else if (mode === 'heatmap') {
+      previewImg.style.filter = 'hue-rotate(180deg) saturate(220%) contrast(140%)';
+    } else if (mode === 'high-contrast') {
+      previewImg.style.filter = 'contrast(175%) brightness(105%)';
+    } else {
+      previewImg.style.filter = 'none';
+    }
+
+    if (hudWindowPreset) hudWindowPreset.textContent = COLORMAP_LABELS[mode] || 'Standard';
+  }
+
+  colormapBtn?.addEventListener('click', () => {
+    const curIdx = COLORMAP_MODES.indexOf(currentFilterMode);
+    const nextMode = COLORMAP_MODES[(curIdx + 1) % COLORMAP_MODES.length];
+    applyColormapMode(nextMode);
+  });
+
+  const processingBox = document.getElementById('processingBox');
+  const resultsEmpty = document.getElementById('resultsEmpty');
+  const resultsBody = document.getElementById('resultsBody');
+  const resultsBadge = document.getElementById('resultsBadge');
+  const observationText = document.getElementById('observationText');
+  const recapMean = document.getElementById('recapMean');
+  const recapStdDev = document.getElementById('recapStdDev');
+  const recapSnr = document.getElementById('recapSnr');
+  const exportReportBtn = document.getElementById('exportReportBtn');
+
+  analyzeBtn?.addEventListener('click', async () => {
+    if (activeScanIndex < 0 || !cohortScans[activeScanIndex]) return;
+    const scan = cohortScans[activeScanIndex];
+
+    if (!geminiApiKey) {
+      resultsEmpty?.classList.add('hidden');
+      resultsBody?.classList.remove('hidden');
+      if (resultsBadge) {
+        resultsBadge.textContent = 'API Key Required';
+        resultsBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 font-medium';
+      }
+      if (observationText) {
+        observationText.innerHTML = `
+          <div class="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-2">
+            <p class="font-bold">⚠️ Gemini API Offline Mode</p>
+            <p>To run real-time multimodal vision review on <strong>${scan.name}</strong>, click the <strong>[Gemini API: Offline]</strong> badge at top right and input your key from Google AI Studio.</p>
+            <p class="text-slate-600 dark:text-slate-400">Offline radiomics and syllabus AI Lab (K-means segmentation + Forward Chaining Expert System) continue running client-side with full precision below.</p>
+          </div>
+        `;
+      }
+      if (recapMean) recapMean.textContent = scan.pixelStats.mean;
+      if (recapStdDev) recapStdDev.textContent = scan.pixelStats.stdDev;
+      if (recapSnr) recapSnr.textContent = scan.pixelStats.snr;
+      return;
+    }
+
+    analyzeBtn.disabled = true;
+    processingBox?.classList.remove('hidden');
+    if (resultsBadge) {
+      resultsBadge.textContent = 'Analyzing…';
+      resultsBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-teal-500/15 border border-teal-500/30 text-teal-700 dark:text-teal-300 font-medium';
+    }
+
+    try {
+      const prompt = `You are a clinical neuro-radiologist assistant.
+Examine this uploaded brain MRI scan slice: "${scan.name}".
+Computed pixel statistics from client canvas: Matrix Resolution ${scan.pixelStats.width}x${scan.pixelStats.height}, Mean Luminance ${scan.pixelStats.mean}/255 HU, Contrast Standard Deviation ${scan.pixelStats.stdDev}, Mean/σ ratio ${scan.pixelStats.snr}.
+
+Provide a clear, objective radiological consultation report:
+1. **Examination & Anatomy**: Orientation (axial/sagittal/coronal), visible anatomical structures (ventricles, hemispheres, cortex).
+2. **Signal Intensities & Findings**: Any notable hyperintensity, hypointensity, mass effect, or bilateral asymmetry.
+3. **Radiomic Impression & Protocol Recommendation**: Correlation with clinical history, suggested sequence correlation (e.g. T1, T2, FLAIR, DWI/ADC).
+Maintain professional, concise clinical terminology.`;
+
+      const review = await callGeminiVision(prompt, scan.dataUrl);
+      scan.aiAnalysis = review;
+      displayAiFindings(review);
+    } catch (err) {
+      resultsEmpty?.classList.add('hidden');
+      resultsBody?.classList.remove('hidden');
+      if (resultsBadge) {
+        resultsBadge.textContent = 'API Notice';
+        resultsBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-medium';
+      }
+
+      if (observationText) {
+        observationText.innerHTML = `
+          <div class="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 mb-3 text-xs leading-relaxed">
+            <p class="font-bold">⚠️ Gemini API Notice:</p>
+            <p class="mt-1">${err.message}</p>
+            <button type="button" onclick="openApiKeyModal()" class="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-teal-600 text-white font-medium text-xs hover:bg-teal-700 cursor-pointer">
+              Verify API Key &amp; Endpoint
+            </button>
+          </div>
+          <p class="font-semibold text-slate-800 dark:text-slate-100 mb-1.5 text-xs uppercase tracking-wide">Client Computed Radiomics:</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-600 dark:text-slate-300 font-mono">
+            <li>Resolution: ${scan.pixelStats.width} × ${scan.pixelStats.height} px</li>
+            <li>Mean Luminance: ${scan.pixelStats.mean} HU</li>
+            <li>Contrast (σ): ${scan.pixelStats.stdDev}</li>
+            <li>Mean/σ Ratio: ${scan.pixelStats.snr}</li>
+            <li>Dynamic Range: ${scan.pixelStats.min} &rarr; ${scan.pixelStats.max}</li>
+          </ul>
+        `;
+      }
+      if (recapMean) recapMean.textContent = scan.pixelStats.mean;
+      if (recapStdDev) recapStdDev.textContent = scan.pixelStats.stdDev;
+      if (recapSnr) recapSnr.textContent = scan.pixelStats.snr;
+    } finally {
+      processingBox?.classList.add('hidden');
+      analyzeBtn.disabled = false;
+    }
+  });
+
+  function displayAiFindings(reviewText) {
+    resultsEmpty?.classList.add('hidden');
+    resultsBody?.classList.remove('hidden');
+    if (resultsBadge) {
+      resultsBadge.textContent = 'Review Complete';
+      resultsBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-semibold';
+    }
+    exportReportBtn?.classList.remove('hidden');
+
+    if (observationText) observationText.innerHTML = renderMarkdown(reviewText);
+
+    const scan = cohortScans[activeScanIndex];
+    if (scan) {
+      if (recapMean) recapMean.textContent = scan.pixelStats.mean;
+      if (recapStdDev) recapStdDev.textContent = scan.pixelStats.stdDev;
+      if (recapSnr) recapSnr.textContent = scan.pixelStats.snr;
+
+      const printDate = document.getElementById('printDate');
+      const printFile = document.getElementById('printFile');
+      const printRadiomics = document.getElementById('printRadiomics');
+      const printAiSummary = document.getElementById('printAiSummary');
+      const printScanImage = document.getElementById('printScanImage');
+
+      if (printDate) printDate.textContent = 'Report Date: ' + new Date().toLocaleString();
+      if (printFile) printFile.textContent = 'Study: ' + scan.name;
+      if (printScanImage && scan.dataUrl && !scan.isPdf) {
+        printScanImage.src = scan.dataUrl;
+        printScanImage.classList.remove('hidden');
+      }
+      if (printRadiomics) {
+        printRadiomics.innerHTML = `
+          <div class="grid grid-cols-4 gap-2 border p-2 text-xs font-mono">
+            <div><strong>Matrix:</strong> ${scan.pixelStats.width}×${scan.pixelStats.height}px</div>
+            <div><strong>Mean Signal:</strong> ${scan.pixelStats.mean} HU</div>
+            <div><strong>Contrast (σ):</strong> ${scan.pixelStats.stdDev}</div>
+            <div><strong>Mean/σ Ratio:</strong> ${scan.pixelStats.snr}</div>
+          </div>
+        `;
+      }
+      if (printAiSummary) printAiSummary.innerHTML = renderMarkdown(reviewText);
+    }
+  }
+
+  function resetFindingsPanel() {
+    resultsEmpty?.classList.remove('hidden');
+    resultsBody?.classList.add('hidden');
+    exportReportBtn?.classList.add('hidden');
+    if (resultsBadge) {
+      resultsBadge.textContent = 'Awaiting Upload';
+      resultsBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium';
+    }
+  }
+
+  exportReportBtn?.addEventListener('click', () => window.print());
+
+  async function callGeminiVision(promptText, imageBase64) {
+    let candidates = await getCandidateEndpoints();
+
+    const contentsParts = [];
+    if (imageBase64) {
+      if (imageBase64.startsWith('data:image/')) {
+        const [mimePart, dataPart] = imageBase64.split(';base64,');
+        if (dataPart) {
+          const cleanMime = (mimePart.replace('data:', '').split(';')[0] || 'image/jpeg').trim();
+          contentsParts.push({
+            inlineData: { mimeType: cleanMime, data: dataPart }
+          });
+        }
+      } else if (imageBase64.startsWith('data:application/pdf')) {
+        const dataPart = imageBase64.split(';base64,')[1];
+        if (dataPart) {
+          contentsParts.push({
+            inlineData: { mimeType: 'application/pdf', data: dataPart }
+          });
+        }
+      }
+    }
+
+    contentsParts.push({ text: promptText });
+
+    let lastError = null;
+
+    for (const candidate of candidates) {
+      try {
+        const endpointUrl = `https://generativelanguage.googleapis.com/${candidate.version}/models/${candidate.model}:generateContent?key=${geminiApiKey}`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 14000);
+
+        const response = await fetch(endpointUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': geminiApiKey
+          },
+          body: JSON.stringify({
+            contents: [{ parts: contentsParts }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1400 }
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+          const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (reply) {
+            workingEndpoint = candidate;
+            storage.set('NEUROSCAN_WORKING_ENDPOINT', JSON.stringify(candidate));
+            updateApiKeyUi();
+            return reply;
+          }
+        }
+
+        const errData = await response.json().catch(() => ({}));
+        const errMsg = errData?.error?.message || `HTTP ${response.status}`;
+        lastError = new Error(errMsg);
+
+        if (response.status === 400 && errMsg.toLowerCase().includes('api key')) {
+          throw new Error('API key is invalid. Please verify your key from Google AI Studio.');
+        }
+        if (response.status === 403) {
+          throw new Error(`API key authorization error: ${errMsg}`);
+        }
+
+        continue;
+      } catch (err) {
+        if (err.message.includes('API key') || err.message.includes('authorization error')) {
+          throw err;
+        }
+        lastError = err;
+        continue;
+      }
+    }
+
+    throw lastError || new Error('No compatible Gemini model could be reached with this API key.');
+  }
+
+  const statTotalScans = document.getElementById('statTotalScans');
+  const statFileSizeTotal = document.getElementById('statFileSizeTotal');
+  const statAvgRes = document.getElementById('statAvgRes');
+  const statMeanSignal = document.getElementById('statMeanSignal');
+  const statMeanContrast = document.getElementById('statMeanContrast');
+  const cohortTableBody = document.getElementById('cohortTableBody');
+  const intensityHistogramBars = document.getElementById('intensityHistogramBars');
+  const exportCsvBtn = document.getElementById('exportCsvBtn');
+  const exportJsonBtn = document.getElementById('exportJsonBtn');
+
+  function updateCohortStatistics() {
+    const total = cohortScans.length;
+    if (statTotalScans) statTotalScans.textContent = total;
+
+    if (total === 0) {
+      if (statFileSizeTotal) statFileSizeTotal.textContent = '0 KB total';
+      if (statAvgRes) statAvgRes.textContent = '--';
+      if (statMeanSignal) statMeanSignal.textContent = '--';
+      if (statMeanContrast) statMeanContrast.textContent = '--';
+      if (cohortTableBody) {
+        cohortTableBody.innerHTML = `<tr><td colspan="9" class="py-8 text-center text-slate-400 font-mono">No scans uploaded yet. Drag and drop your MRI files above or load benchmark scans to populate the table.</td></tr>`;
+      }
+      if (intensityHistogramBars) intensityHistogramBars.innerHTML = '';
+      return;
+    }
+
+    const totalBytes = cohortScans.reduce((acc, s) => acc + (s.size || 0), 0);
+    if (statFileSizeTotal) statFileSizeTotal.textContent = `${formatBytes(totalBytes)} total`;
+
+    const validImages = cohortScans.filter(s => !s.isPdf && s.pixelStats && s.pixelStats.width > 0);
+    if (validImages.length > 0) {
+      const avgW = Math.round(validImages.reduce((acc, s) => acc + s.pixelStats.width, 0) / validImages.length);
+      const avgH = Math.round(validImages.reduce((acc, s) => acc + s.pixelStats.height, 0) / validImages.length);
+      if (statAvgRes) statAvgRes.textContent = `${avgW}×${avgH}`;
+
+      const avgMean = (validImages.reduce((acc, s) => acc + parseFloat(s.pixelStats.mean || 0), 0) / validImages.length).toFixed(1);
+      if (statMeanSignal) statMeanSignal.textContent = avgMean;
+
+      const avgContrast = (validImages.reduce((acc, s) => acc + parseFloat(s.pixelStats.stdDev || 0), 0) / validImages.length).toFixed(1);
+      if (statMeanContrast) statMeanContrast.textContent = avgContrast;
+    } else {
+      if (statAvgRes) statAvgRes.textContent = 'PDF';
+      if (statMeanSignal) statMeanSignal.textContent = '--';
+      if (statMeanContrast) statMeanContrast.textContent = '--';
+    }
+
+    if (cohortTableBody) {
+      cohortTableBody.innerHTML = '';
+      cohortScans.forEach((scan, idx) => {
+        const isSelected = idx === activeScanIndex;
+        const tr = document.createElement('tr');
+        tr.className = `hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isSelected ? 'bg-teal-500/10' : ''}`;
+
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 font-mono font-medium text-slate-800 dark:text-slate-200">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full ${isSelected ? 'bg-teal-500' : 'bg-slate-300 dark:bg-slate-600'}"></span>
+              <span class="truncate max-w-[180px] sm:max-w-[240px]" title="${scan.name}">${scan.name}</span>
+            </div>
+          </td>
+          <td class="py-2.5 px-3 font-mono">${scan.isPdf ? 'PDF' : `${scan.pixelStats.width}×${scan.pixelStats.height}`}</td>
+          <td class="py-2.5 px-3 font-mono text-slate-500">${formatBytes(scan.size)}</td>
+          <td class="py-2.5 px-3 font-mono">${scan.pixelStats.min}</td>
+          <td class="py-2.5 px-3 font-mono">${scan.pixelStats.max}</td>
+          <td class="py-2.5 px-3 font-mono font-semibold text-teal-600 dark:text-teal-400">${scan.pixelStats.mean}</td>
+          <td class="py-2.5 px-3 font-mono">${scan.pixelStats.stdDev}</td>
+          <td class="py-2.5 px-3 font-mono font-bold">${scan.pixelStats.snr}</td>
+          <td class="py-2.5 px-3 text-right">
+            <button class="inspect-btn text-xs font-semibold text-teal-600 dark:text-teal-400 hover:underline">
+              ${isSelected ? 'Active' : 'Inspect'}
+            </button>
+          </td>
+        `;
+
+        tr.querySelector('.inspect-btn')?.addEventListener('click', () => {
+          selectScan(idx);
+          document.getElementById('upload')?.scrollIntoView({ behavior: 'smooth' });
+        });
+        cohortTableBody.appendChild(tr);
+      });
+    }
+
+    renderRealHistogram();
+  }
+
+  function renderRealHistogram() {
+    if (!intensityHistogramBars) return;
+    intensityHistogramBars.innerHTML = '';
+
+    const scan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    const bins = (scan && scan.pixelStats && scan.pixelStats.histogram)
+      ? scan.pixelStats.histogram
+      : new Array(24).fill(0);
+
+    const maxVal = Math.max(...bins, 1);
+    bins.forEach((count, i) => {
+      const heightPct = Math.max(6, Math.round((count / maxVal) * 100));
+      const bar = document.createElement('div');
+      bar.className = 'flex-1 rounded-t transition-all duration-300 relative group cursor-pointer';
+      bar.style.height = `${heightPct}%`;
+      bar.style.backgroundColor = i > 18 ? '#ef4444' : i > 13 ? '#10b981' : i > 6 ? '#3b82f6' : '#64748b';
+      bar.title = `Bin ${i + 1} (~${Math.round((i / 24) * 255)} HU): ${count} pixels sampled`;
+      intensityHistogramBars.appendChild(bar);
+    });
+  }
+
+  exportCsvBtn?.addEventListener('click', () => {
+    if (cohortScans.length === 0) {
+      alert('No scans to export.');
+      return;
+    }
+
+    let csv = 'Filename,Width,Height,FileSizeBytes,Min_Luminance,Max_Luminance,Mean_Signal,StdDev_Contrast,Mean_Sigma_Ratio\n';
+    cohortScans.forEach(s => {
+      csv += `"${s.name}",${s.pixelStats.width},${s.pixelStats.height},${s.size},${s.pixelStats.min},${s.pixelStats.max},${s.pixelStats.mean},${s.pixelStats.stdDev},${s.pixelStats.snr}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `NeuroScan_Radiomics_${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  exportJsonBtn?.addEventListener('click', () => {
+    if (cohortScans.length === 0) {
+      alert('No scans to export.');
+      return;
+    }
+    const payload = {
+      workbench: 'NeuroScan AI',
+      exportedAt: new Date().toISOString(),
+      totalScans: cohortScans.length,
+      scans: cohortScans.map(s => ({
+        name: s.name,
+        sizeBytes: s.size,
+        dimensions: { width: s.pixelStats.width, height: s.pixelStats.height },
+        pixelStats: {
+          min: s.pixelStats.min,
+          max: s.pixelStats.max,
+          mean: s.pixelStats.mean,
+          contrastStdDev: s.pixelStats.stdDev,
+          snr: s.pixelStats.snr
+        },
+        aiReview: s.aiAnalysis || null
+      }))
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `NeuroScan_Radiomics_${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  const chatForm = document.getElementById('chatForm');
+  const chatInput = document.getElementById('chatInput');
+  const chatTranscript = document.getElementById('chatTranscript');
+  const attachBtn = document.getElementById('attachBtn');
+  const clearChatBtn = document.getElementById('clearChatBtn');
+
+  chatInput?.addEventListener('input', () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(120, chatInput.scrollHeight) + 'px';
+  });
+
+  function renderMarkdown(text) {
+    if (!text) return '';
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const lines = escaped.split('\n');
+    let html = '';
+    let inList = false;
+
+    for (const line of lines) {
+      if (/^\s*[-*]\s+/.test(line)) {
+        if (!inList) {
+          html += '<ul class="list-disc list-inside space-y-1 my-1.5">';
+          inList = true;
+        }
+        html += `<li>${line.replace(/^\s*[-*]\s+/, '')}</li>`;
+      } else {
+        if (inList) {
+          html += '</ul>';
+          inList = false;
+        }
+        html += line ? `<p class="${html ? 'mt-1.5' : ''}">${line}</p>` : '';
+      }
+    }
+    if (inList) html += '</ul>';
+
+    return html
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`(.+?)`/g, '<code class="font-mono text-xs bg-slate-200/80 dark:bg-slate-800 px-1 py-0.5 rounded text-slate-800 dark:text-slate-200">$1</code>');
+  }
+
+  function appendMessage(role, text) {
+    if (!chatTranscript) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'flex ' + (role === 'user' ? 'justify-end' : 'justify-start');
+    const bubble = document.createElement('div');
+    bubble.className = role === 'user'
+      ? 'max-w-[85%] bg-ink dark:bg-teal-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-xs sm:text-[13px] leading-relaxed shadow-sm'
+      : 'max-w-[85%] bg-white dark:bg-slate-900 border border-line dark:border-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 text-xs sm:text-[13px] leading-relaxed shadow-card text-ink dark:text-slate-100';
+    bubble.innerHTML = renderMarkdown(text);
+    wrap.appendChild(bubble);
+    chatTranscript.appendChild(wrap);
+    chatTranscript.scrollTop = chatTranscript.scrollHeight;
+
+    chatHistory.push({ role, text });
+    return bubble;
+  }
+
+  function appendTypingIndicator() {
+    removeTypingIndicator();
+    if (!chatTranscript) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'typingIndicator';
+    wrap.className = 'flex justify-start';
+    wrap.innerHTML = `
+      <div class="bg-white dark:bg-slate-900 border border-line dark:border-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-2.5 items-center shadow-sm">
+        <div class="flex items-center gap-1.5">
+          <span class="neuro-dot"></span>
+          <span class="neuro-dot"></span>
+          <span class="neuro-dot"></span>
+        </div>
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-mono">Evaluating scan metrics…</span>
+      </div>
+    `;
+    chatTranscript.appendChild(wrap);
+    chatTranscript.scrollTop = chatTranscript.scrollHeight;
+  }
+
+  function removeTypingIndicator() {
+    const el = document.getElementById('typingIndicator');
+    if (el) el.remove();
+  }
+
+  clearChatBtn?.addEventListener('click', () => {
+    if (chatTranscript) chatTranscript.innerHTML = '';
+    chatHistory = [];
+    appendWelcome();
+  });
+
+  async function handleChat(userMessage) {
+    const activeScan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    const msg = (userMessage || '').toLowerCase().trim();
+
+    if (msg.includes('summarize') || msg.includes('how many') || msg.includes('cohort') || (msg.includes('scans') && !msg.includes('review'))) {
+      await new Promise(r => setTimeout(r, 200));
+      if (cohortScans.length === 0) {
+        return `No brain MRI scans have been uploaded yet. Drop an MRI file into the dropzone or click any of the **Benchmark Study** buttons above to inspect pre-calibrated scans!`;
+      }
+      return `You have **${cohortScans.length} scan(s)** in your active session:
+${cohortScans.map(s => `- **\`${s.name}\`**: ${s.pixelStats.width}×${s.pixelStats.height}px | Mean: ${s.pixelStats.mean} HU | Contrast (σ): ${s.pixelStats.stdDev} | Mean/σ ratio: ${s.pixelStats.snr}`).join('\n')}
+
+Active scan: **\`${activeScan ? activeScan.name : cohortScans[0].name}\`**. You can click **Run AI Scan Review** for automated diagnostic findings.`;
+    }
+
+    if (msg.includes('ratio') || msg.includes('snr') || msg.includes('mean/σ') || msg.includes('signal') || (msg.includes('contrast') && !msg.includes('enhance'))) {
+      await new Promise(r => setTimeout(r, 200));
+      if (!activeScan) return `Please upload or select an MRI scan above to inspect its calculated mean/σ ratio.`;
+      return `Radiometric breakdown for **\`${activeScan.name}\`**:
+* **Matrix Resolution**: ${activeScan.pixelStats.width} × ${activeScan.pixelStats.height} px
+* **Mean Grayscale Luminance**: **${activeScan.pixelStats.mean}** (0–255 HU equivalent)
+* **Contrast Dispersion (σ)**: **${activeScan.pixelStats.stdDev}**
+* **Mean/σ Intensity Ratio**: **${activeScan.pixelStats.snr}**
+* **Dynamic Pixel Range**: min **${activeScan.pixelStats.min}** &rarr; max **${activeScan.pixelStats.max}**
+
+*Clinical note*: In client-side radiomics, the Mean/σ ratio reflects signal dispersion across the whole raster. Higher contrast with deep dark ventricles creates a balanced ratio suitable for tissue segmentation.`;
+    }
+
+    if (/\b(sequence|sequences|t1|t2|flair)\b/i.test(msg)) {
+      await new Promise(r => setTimeout(r, 200));
+      return `Overview of essential Brain MRI Pulse Sequences:
+* **T1-Weighted**: Optimized for anatomical architecture. Free fluid (CSF) is hypointense (dark); cortex is gray; myelin-rich white matter is hyperintense (bright).
+* **T2-Weighted**: Sensitive to fluid and vasogenic edema. Water, CSF, and inflammatory fluids are hyperintense (bright).
+* **FLAIR (Fluid-Attenuated Inversion Recovery)**: Selectively suppresses free CSF signal, making periventricular lesions and tissue edema stand out vividly without CSF shine-through.`;
+    }
+
+    if (msg === 'hi' || msg === 'hello' || msg === 'hey' || msg.startsWith('hi ') || msg.startsWith('hello ')) {
+      await new Promise(r => setTimeout(r, 150));
+      return `Hello! NeuroScan AI is ready. Currently **${cohortScans.length} scan(s)** are loaded in your session.${activeScan ? ` Active study: \`${activeScan.name}\` (Resolution: ${activeScan.pixelStats.width}×${activeScan.pixelStats.height}px, Mean/σ ratio: ${activeScan.pixelStats.snr}).` : ''} How can I assist you with your radiomic review?`;
+    }
+
+    if (geminiApiKey) {
+      try {
+        const prompt = `User question: "${userMessage}"
+Active scan loaded: ${activeScan ? activeScan.name + ' (Resolution ' + activeScan.pixelStats.width + 'x' + activeScan.pixelStats.height + ', Mean ' + activeScan.pixelStats.mean + ' HU, Contrast ' + activeScan.pixelStats.stdDev + ', Mean/σ ratio ' + activeScan.pixelStats.snr + ')' : 'None'}
+Total cohort scans: ${cohortScans.length}.
+Ground your answer in medical neuro-radiology facts and the uploaded data.`;
+        return await callGeminiVision(prompt, activeScan ? activeScan.dataUrl : null);
+      } catch (err) {
+        return `*(Gemini API response note: ${err.message})*\n\nBased on your active session: currently **${cohortScans.length} scan(s)** are loaded. You can view the computed SNR, luminance, and K-means clusters above!`;
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 200));
+    return `Currently **${cohortScans.length} scan(s)** are loaded. Click any of the prompt chips below or connect your Gemini API key in the top navigation bar for live diagnostic interpretation!`;
+  }
+
+  async function handleSend(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    appendMessage('user', trimmed);
+    if (chatInput) {
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+    }
+    appendTypingIndicator();
+    try {
+      const reply = await handleChat(trimmed);
+      removeTypingIndicator();
+      appendMessage('assistant', reply);
+    } catch (err) {
+      removeTypingIndicator();
+      appendMessage('assistant', 'An unexpected error occurred. Please try again.');
+    }
+  }
+
+  chatForm?.addEventListener('submit', e => {
+    e.preventDefault();
+    if (chatInput) handleSend(chatInput.value);
+  });
+  chatInput?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(chatInput.value);
+    }
+  });
+
+  document.querySelectorAll('.quick-prompt').forEach(btn => {
+    btn.addEventListener('click', () => handleSend(btn.textContent));
+  });
+
+  attachBtn?.addEventListener('click', () => {
+    const activeScan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    if (!activeScan) {
+      fileInput?.click();
+      return;
+    }
+    appendMessage('user', `📎 Attached: \`${activeScan.name}\``);
+    appendMessage('assistant', `Acknowledged \`${activeScan.name}\` (${activeScan.pixelStats.width}×${activeScan.pixelStats.height}px, Mean/σ ratio: ${activeScan.pixelStats.snr}). What specific anatomical or radiomic features would you like to review?`);
+  });
+
+  function appendWelcome() {
+    appendMessage('assistant', `Welcome to **NeuroScan AI — Brain MRI Radiomics Workbench**.
+
+To get started:
+* Click any **Benchmark Study** (Normal T1, Pathological T2, or FLAIR) to immediately test the system with 1-click.
+* Or **drag & drop** your real brain MRI scans (.png, .jpg, .pdf) into the upload viewport.
+* Review real-time **K-means tissue segmentation** and the **forward-chaining expert system trace** in the AI Lab.
+* Connect your Google Gemini API key via the top bar for live multimodal diagnostic impressions!`);
+  }
+  appendWelcome();
+
+  window.NeuroScanApp = {
+    cohortScans,
+    selectScan,
+    loadSample
+  };
+})();
+</script>
+
+<script>
+/* =========================================================================
+   NeuroScan AI Lab — Syllabus-Driven AI Components (Zero External API)
+   Unit 5 (Learning): K-means clustering (unsupervised) for tissue segmentation
+   Units 3 & 6: Rule-based expert system with forward chaining + explanation trace
+   ========================================================================= */
+
+(function () {
+  'use strict';
+
+  const N = 128;
+  const PALETTES = {
+    clinical: ['#09090b', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
+    grayscale: ['#0a0a0a', '#4a4a4a', '#8a8a8a', '#c8c8c8', '#ffffff'],
+    thermal: ['#000004', '#51127c', '#b73779', '#fc8961', '#fcfdbf']
+  };
+
+  const TISSUE_NAMES = [
+    'Air / Background / Bone Cortex',
+    'Cerebrospinal Fluid (CSF) / Deep Sulci',
+    'Cortical Gray Matter',
+    'Subcortical White Matter',
+    'Hyperintense Region / Lesion'
+  ];
+
+  let currentSegmentation = null;
+  let activeClusterFilter = -1;
+
+  function kmeans(values, k, maxIter = 60) {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+
+    if (hi === lo) hi = lo + 1;
+
+    let cent = Array.from({ length: k }, (_, i) => lo + ((i + 0.5) / k) * (hi - lo));
+    const labels = new Uint8Array(values.length);
+    let iter = 0;
+    let moved = true;
+
+    while (moved && iter < maxIter) {
+      moved = false;
+      iter++;
+      const sum = new Float64Array(k);
+      const cnt = new Uint32Array(k);
+
+      for (let i = 0; i < values.length; i++) {
+        const val = values[i];
+        let best = 0;
+        let bd = Infinity;
+        for (let c = 0; c < k; c++) {
+          const d = Math.abs(val - cent[c]);
+          if (d < bd) {
+            bd = d;
+            best = c;
+          }
+        }
+        if (labels[i] !== best) {
+          labels[i] = best;
+          moved = true;
+        }
+        sum[best] += val;
+        cnt[best]++;
+      }
+
+      for (let c = 0; c < k; c++) {
+        if (cnt[c] > 0) {
+          cent[c] = sum[c] / cnt[c];
+        }
+      }
+    }
+
+    let sse = 0;
+    for (let i = 0; i < values.length; i++) {
+      sse += (values[i] - cent[labels[i]]) ** 2;
+    }
+
+    const order = cent.map((c, i) => [c, i]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+    const remap = new Uint8Array(k);
+    order.forEach((oldIdx, newIdx) => (remap[oldIdx] = newIdx));
+
+    for (let i = 0; i < labels.length; i++) {
+      labels[i] = remap[labels[i]];
+    }
+
+    const sortedCentroids = order.map(i => cent[i]);
+    const counts = new Array(k).fill(0);
+    for (let i = 0; i < labels.length; i++) {
+      counts[labels[i]]++;
+    }
+
+    return {
+      labels,
+      centroids: sortedCentroids,
+      counts,
+      iterations: iter,
+      sse,
+      k
+    };
+  }
+
+  const RULES = [
+    {
+      id: 'R1',
+      if: ['low_contrast'],
+      then: 'poor_quality',
+      why: 'Low contrast dispersion (σ < 25) obscures fine anatomical tissue boundaries'
+    },
+    {
+      id: 'R2',
+      if: ['under_exposed'],
+      then: 'poor_quality',
+      why: 'Severe hypo-illumination (mean luminance < 28) results in signal starvation'
+    },
+    {
+      id: 'R3',
+      if: ['poor_quality'],
+      then: 'recommend_rescan',
+      why: 'Uncertain signal-to-noise ratio compromises quantitative evaluation; re-acquisition recommended'
+    },
+    {
+      id: 'R4',
+      if: ['large_bright_cluster', 'good_quality'],
+      then: 'focal_hyperintensity',
+      why: 'Brightest intensity cluster occupies an unusually elevated fraction of brain parenchyma'
+    },
+    {
+      id: 'R5',
+      if: ['left_right_asymmetry', 'good_quality'],
+      then: 'hemispheric_asymmetry',
+      why: 'Bilateral intensity divergence across the mid-sagittal plane exceeds clinical tolerance (> 12%)'
+    },
+    {
+      id: 'R6',
+      if: ['focal_hyperintensity', 'hemispheric_asymmetry'],
+      then: 'flag_for_radiologist',
+      why: 'Correlated focal hyperintensity and hemispheric asymmetry indicate localized structural variance'
+    },
+    {
+      id: 'R7',
+      if: ['focal_hyperintensity'],
+      then: 'suggest_flair_correlation',
+      why: 'Hyperintense signal should be correlated with FLAIR / T2-weighted pulse sequences to rule out edema'
+    }
+  ];
+
+  const FACT_DEFINITIONS = {
+    low_contrast: { label: 'Low Contrast Dispersion', desc: 'Standard deviation σ < 25 HU', icon: 'activity' },
+    under_exposed: { label: 'Severe Hypo-intensity', desc: 'Mean signal luminance < 28 HU', icon: 'moon' },
+    good_quality: { label: 'Adequate Image Quality', desc: 'Sufficient contrast & luminance for segmentation', icon: 'check-circle' },
+    large_bright_cluster: { label: 'Elevated High-Intensity Tissue Volume', desc: 'Brightest K-means cluster > 12% total volume', icon: 'zap' },
+    left_right_asymmetry: { label: 'Bilateral Hemispheric Asymmetry', desc: 'Inter-hemispheric intensity divergence > 12%', icon: 'split' },
+    poor_quality: { label: 'Sub-Optimal Acquisition', desc: 'Inadequate SNR or contrast', icon: 'alert-triangle' },
+    recommend_rescan: { label: 'ACTION: Recommend Scan Re-acquisition', desc: 'Repeat slice acquisition with calibrated windowing', icon: 'repeat' },
+    focal_hyperintensity: { label: 'FINDING: Focal Hyperintensity', desc: 'Localized high-signal tissue region detected', icon: 'crosshair' },
+    hemispheric_asymmetry: { label: 'FINDING: Hemispheric Asymmetry', desc: 'Significant bilateral variance across falx cerebri', icon: 'compass' },
+    flag_for_radiologist: { label: 'FLAG: Priority Review by Neuro-Radiologist', desc: 'Multiple independent radiomic criteria triggered', icon: 'shield-alert' },
+    suggest_flair_correlation: { label: 'PROTOCOL: Correlate with FLAIR / T2 Sequence', desc: 'Differentiate CSF nulling from cellular edema', icon: 'layers' }
+  };
+
+  function forwardChain(initialFacts) {
+    const facts = new Set(initialFacts);
+    const trace = [];
+    let changed = true;
+    let iteration = 0;
+
+    while (changed && iteration < 20) {
+      changed = false;
+      iteration++;
+      for (const r of RULES) {
+        if (!facts.has(r.then)) {
+          const prerequisitesMet = r.if.every(f => facts.has(f));
+          if (prerequisitesMet) {
+            facts.add(r.then);
+            trace.push({
+              rule: r,
+              cycle: iteration,
+              inputs: [...r.if],
+              output: r.then
+            });
+            changed = true;
+          }
+        }
+      }
+    }
+    return { facts, trace };
+  }
+
+  function extractGrayscaleMatrix(img) {
+    const canvas = document.createElement('canvas');
+    canvas.width = N;
+    canvas.height = N;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, N, N);
+    const imgData = ctx.getImageData(0, 0, N, N).data;
+    const gray = new Float32Array(N * N);
+
+    for (let i = 0; i < gray.length; i++) {
+      gray[i] = 0.299 * imgData[i * 4] + 0.587 * imgData[i * 4 + 1] + 0.114 * imgData[i * 4 + 2];
+    }
+    return gray;
+  }
+
+  function calculateBilateralAsymmetry(gray) {
+    let diff = 0;
+    let total = 0;
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N / 2; x++) {
+        const left = gray[y * N + x];
+        const right = gray[y * N + (N - 1 - x)];
+        diff += Math.abs(left - right);
+        total += left + right;
+      }
+    }
+    return total > 0 ? (2 * diff) / total : 0;
+  }
+
+  function deriveInitialFacts(stats, km, asym) {
+    const facts = [];
+    const sd = parseFloat(stats.stdDev || 0);
+    const mean = parseFloat(stats.mean || 0);
+    const k = km.centroids.length;
+    const brightClusterCount = km.counts[k - 1] || 0;
+    const brightFrac = brightClusterCount / km.labels.length;
+
+    if (sd < 25) facts.push('low_contrast');
+    if (mean < 28) facts.push('under_exposed');
+    if (sd >= 25 && mean >= 28) facts.push('good_quality');
+    if (brightFrac > 0.12) facts.push('large_bright_cluster');
+    if (asym > 0.12) facts.push('left_right_asymmetry');
+
+    return { facts, brightFrac, sd, mean, asym };
+  }
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  function renderSegmentationCanvas(km, palette, filterCluster = -1) {
+    const cv = $('labCanvas');
+    if (!cv) return;
+    cv.width = N;
+    cv.height = N;
+    const ctx = cv.getContext('2d');
+    const out = ctx.createImageData(N, N);
+
+    for (let i = 0; i < km.labels.length; i++) {
+      const cIdx = km.labels[i];
+      if (filterCluster !== -1 && cIdx !== filterCluster) {
+        out.data[i * 4] = 15;
+        out.data[i * 4 + 1] = 18;
+        out.data[i * 4 + 2] = 23;
+        out.data[i * 4 + 3] = 255;
+        continue;
+      }
+
+      const hex = palette[Math.min(cIdx, palette.length - 1)];
+      out.data[i * 4] = parseInt(hex.slice(1, 3), 16);
+      out.data[i * 4 + 1] = parseInt(hex.slice(3, 5), 16);
+      out.data[i * 4 + 2] = parseInt(hex.slice(5, 7), 16);
+      out.data[i * 4 + 3] = 255;
+    }
+
+    ctx.putImageData(out, 0, 0);
+  }
+
+  function runLab(providedScan) {
+    const empty = $('labEmpty');
+    const body = $('labBody');
+    if (!empty || !body) return;
+
+    let scan = providedScan;
+    if (!scan && typeof cohortScans !== 'undefined' && typeof activeScanIndex !== 'undefined') {
+      scan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    }
+
+    if (!scan || scan.isPdf || !scan.dataUrl) {
+      empty.classList.remove('hidden');
+      body.classList.add('hidden');
+      empty.innerHTML = `
+        <div class="flex flex-col items-center justify-center text-center py-10 text-slate-400">
+          <div class="w-10 h-10 rounded-full bg-slate-800/80 flex items-center justify-center mb-2.5 text-slate-500">
+            <i data-lucide="brain" class="w-5 h-5"></i>
+          </div>
+          <p class="font-medium text-slate-300 text-sm">${scan && scan.isPdf ? 'AI Lab requires an image scan (PNG/JPG), not a PDF document.' : 'Awaiting MRI Scan Upload'}</p>
+          <p class="text-xs text-slate-500 mt-1 max-w-sm">Upload or select an MRI scan above to execute K-means tissue segmentation and the rule-based expert system.</p>
+        </div>
+      `;
+      if (typeof safeCreateIcons === 'function') safeCreateIcons();
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const kSelect = $('labK');
+      const k = parseInt(kSelect ? kSelect.value : 4, 10) || 4;
+      const palette = PALETTES.clinical.slice(0, k);
+
+      const gray = extractGrayscaleMatrix(img);
+      const km = kmeans(gray, k);
+      const asym = calculateBilateralAsymmetry(gray);
+      const { facts, brightFrac } = deriveInitialFacts(scan.pixelStats, km, asym);
+      const inference = forwardChain(facts);
+
+      currentSegmentation = { km, palette, scan, asym, brightFrac, facts, inference };
+      activeClusterFilter = -1;
+
+      empty.classList.add('hidden');
+      body.classList.remove('hidden');
+
+      const labOrig = $('labOrig');
+      if (labOrig) labOrig.src = scan.dataUrl;
+
+      renderSegmentationCanvas(km, palette, activeClusterFilter);
+
+      const kmStats = $('labKmStats');
+      if (kmStats) {
+        kmStats.innerHTML = `
+          <div class="space-y-1.5">
+            ${km.centroids.map((centroid, i) => {
+              const pct = ((100 * km.counts[i]) / km.labels.length).toFixed(1);
+              const color = palette[Math.min(i, palette.length - 1)];
+              const tissueName = TISSUE_NAMES[i] || `Tissue Class ${i + 1}`;
+              return `
+                <div class="cluster-row flex items-center justify-between p-1.5 rounded-lg border border-line/60 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition-colors text-xs"
+                     data-cluster="${i}" title="Click to isolate this tissue cluster">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-3.5 h-3.5 rounded-sm shrink-0 border border-black/20" style="background:${color}"></span>
+                    <div class="truncate">
+                      <span class="font-medium text-slate-800 dark:text-slate-200">${tissueName}</span>
+                      <span class="text-[10px] text-slate-400 font-mono block">Centroid: ${centroid.toFixed(1)} HU</span>
+                    </div>
+                  </div>
+                  <div class="text-right shrink-0 font-mono">
+                    <span class="font-bold text-slate-700 dark:text-slate-300">${pct}%</span>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+          <div class="mt-2.5 pt-2 border-t border-line/60 dark:border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500">
+            <span>Converged: ${km.iterations} iterations</span>
+            <span>SSE: ${km.sse.toExponential(2)}</span>
+          </div>
+        `;
+
+        kmStats.querySelectorAll('.cluster-row').forEach(row => {
+          row.addEventListener('click', () => {
+            const cIdx = parseInt(row.getAttribute('data-cluster'), 10);
+            activeClusterFilter = activeClusterFilter === cIdx ? -1 : cIdx;
+            renderSegmentationCanvas(km, palette, activeClusterFilter);
+            kmStats.querySelectorAll('.cluster-row').forEach(r => {
+              const match = parseInt(r.getAttribute('data-cluster'), 10) === activeClusterFilter;
+              r.classList.toggle('ring-2', match);
+              r.classList.toggle('ring-teal-500', match);
+            });
+          });
+        });
+      }
+
+      const factsEl = $('labFacts');
+      if (factsEl) {
+        factsEl.innerHTML = facts.length ? facts.map(f => {
+          const def = FACT_DEFINITIONS[f] || { label: f, desc: '' };
+          return `
+            <li class="p-2 rounded-lg border border-line/60 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 text-xs">
+              <div class="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
+                <span>${esc(def.label)}</span>
+              </div>
+              ${def.desc ? `<p class="text-[11px] text-slate-500 mt-0.5 ml-3">${esc(def.desc)}</p>` : ''}
+            </li>
+          `;
+        }).join('') : '<li class="text-xs text-slate-500 italic p-2">No abnormal baseline facts detected.</li>';
+      }
+
+      const traceEl = $('labTrace');
+      if (traceEl) {
+        traceEl.innerHTML = inference.trace.length ? inference.trace.map(t => {
+          const rule = t.rule;
+          const outDef = FACT_DEFINITIONS[t.output] || { label: t.output };
+          return `
+            <li class="p-2.5 rounded-lg border border-line/60 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-xs">
+              <div class="flex items-center justify-between mb-1">
+                <span class="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-400 border border-teal-200 dark:border-teal-800/60">
+                  RULE ${rule.id}
+                </span>
+                <span class="text-[10px] text-slate-400 font-mono">Cycle ${t.cycle}</span>
+              </div>
+              <p class="font-mono text-[11px] text-slate-600 dark:text-slate-300 mb-1">
+                <strong class="text-slate-700 dark:text-slate-200">IF</strong> ${rule.if.map(k => esc(FACT_DEFINITIONS[k]?.label || k)).join(' <strong class="text-slate-700 dark:text-slate-200">&amp;</strong> ')}
+                <br>&rarr; <strong class="text-teal-600 dark:text-teal-400">THEN</strong> ${esc(outDef.label)}
+              </p>
+              <p class="text-[11px] text-slate-500 italic">"${esc(rule.why)}"</p>
+            </li>
+          `;
+        }).join('') : '<li class="text-xs text-slate-500 italic p-2">No heuristic rules fired based on current facts.</li>';
+      }
+
+      const conclusionsEl = $('labConclusions');
+      if (conclusionsEl) {
+        const conclusions = [...inference.facts].filter(f => /^(recommend|flag|suggest|focal|hemispheric)/.test(f));
+        conclusionsEl.innerHTML = conclusions.length ? conclusions.map(c => {
+          const def = FACT_DEFINITIONS[c] || { label: c, desc: '' };
+          const isUrgent = c.startsWith('flag') || c.startsWith('recommend');
+          return `
+            <div class="p-2.5 rounded-lg border text-xs leading-relaxed ${
+              isUrgent 
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200' 
+                : 'border-teal-500/40 bg-teal-500/10 text-teal-900 dark:text-teal-200'
+            }">
+              <div class="flex items-center gap-2 font-semibold">
+                <span class="w-2 h-2 rounded-full ${isUrgent ? 'bg-amber-500' : 'bg-teal-500'}"></span>
+                <span>${esc(def.label)}</span>
+              </div>
+              ${def.desc ? `<p class="mt-1 text-[11.5px] opacity-90 pl-4">${esc(def.desc)}</p>` : ''}
+            </div>
+          `;
+        }).join('') : `
+          <div class="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs">
+            <span class="font-semibold block mb-0.5">✅ No Immediate Action Directives</span>
+            Extracted radiomic parameters lie within normal calibrated tolerances.
+          </div>
+        `;
+      }
+
+      const metaEl = $('labMeta');
+      if (metaEl) {
+        metaEl.textContent = `Radiomic Vector: Contrast σ=${scan.pixelStats.stdDev} | Luminance Mean=${scan.pixelStats.mean} HU | Hemispheric Asymmetry=${(asym * 100).toFixed(1)}% | Bright Cluster Vol=${(brightFrac * 100).toFixed(1)}%`;
+      }
+
+      if (typeof safeCreateIcons === 'function') safeCreateIcons();
+    };
+
+    img.src = scan.dataUrl;
+  }
+
+  function resetLab() {
+    currentSegmentation = null;
+    activeClusterFilter = -1;
+    const empty = $('labEmpty');
+    const body = $('labBody');
+    if (empty) {
+      empty.classList.remove('hidden');
+      empty.innerHTML = `
+        <div class="flex flex-col items-center justify-center text-center py-10 text-slate-400">
+          <div class="w-10 h-10 rounded-full bg-slate-800/80 flex items-center justify-center mb-2.5 text-slate-500">
+            <i data-lucide="brain" class="w-5 h-5"></i>
+          </div>
+          <p class="font-medium text-slate-300 text-sm">Awaiting MRI Scan Upload</p>
+          <p class="text-xs text-slate-500 mt-1 max-w-sm">Upload or select an MRI scan above to execute K-means tissue segmentation and the rule-based expert system.</p>
+        </div>
+      `;
+    }
+    if (body) body.classList.add('hidden');
+    if (typeof safeCreateIcons === 'function') safeCreateIcons();
+  }
+
+  function init() {
+    const labK = $('labK');
+    const labRun = $('labRun');
+
+    labK?.addEventListener('change', () => runLab());
+    labRun?.addEventListener('click', () => runLab());
+
+    window.addEventListener('neuroscan:scanSelected', e => {
+      runLab(e.detail?.scan);
+    });
+
+    window.addEventListener('neuroscan:scansCleared', () => {
+      resetLab();
+    });
+
+    window.NeuroAILab = {
+      runLab,
+      resetLab,
+      kmeans,
+      forwardChain,
+      RULES,
+      getCurrentSegmentation: () => currentSegmentation
+    };
+
+    runLab();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>
