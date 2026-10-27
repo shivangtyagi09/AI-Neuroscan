@@ -1378,4 +1378,150 @@ Maintain professional, concise clinical terminology.`;
     wrap.className = 'flex justify-start';
     wrap.innerHTML = `
       <div class="bg-white dark:bg-slate-900 border border-line dark:border-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-2.5 items-center shadow-sm">
-window.analyzeActualImagePixels = analyzeActualImagePixels;
+        <div class="flex items-center gap-1.5">
+          <span class="neuro-dot"></span>
+          <span class="neuro-dot"></span>
+          <span class="neuro-dot"></span>
+        </div>
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-mono">Evaluating scan metrics…</span>
+      </div>
+    `;
+    chatTranscript.appendChild(wrap);
+    chatTranscript.scrollTop = chatTranscript.scrollHeight;
+  }
+
+  function removeTypingIndicator() {
+    const el = document.getElementById('typingIndicator');
+    if (el) el.remove();
+  }
+
+  clearChatBtn?.addEventListener('click', () => {
+    if (chatTranscript) chatTranscript.innerHTML = '';
+    chatHistory = [];
+    appendWelcome();
+  });
+
+  async function handleChat(userMessage) {
+    const activeScan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    const msg = (userMessage || '').toLowerCase().trim();
+
+    // 1. Summaries
+    if (msg.includes('summarize') || msg.includes('how many') || msg.includes('cohort') || (msg.includes('scans') && !msg.includes('review'))) {
+      await new Promise(r => setTimeout(r, 200));
+      if (cohortScans.length === 0) {
+        return `No brain MRI scans have been uploaded yet. Drop an MRI file into the dropzone or click any of the **Benchmark Study** buttons above to inspect pre-calibrated scans!`;
+      }
+      return `You have **${cohortScans.length} scan(s)** in your active session:
+${cohortScans.map(s => `- **\`${s.name}\`**: ${s.pixelStats.width}×${s.pixelStats.height}px | Mean: ${s.pixelStats.mean} HU | Contrast (σ): ${s.pixelStats.stdDev} | Mean/σ ratio: ${s.pixelStats.snr}`).join('\n')}
+
+Active scan: **\`${activeScan ? activeScan.name : cohortScans[0].name}\`**. You can click **Run AI Scan Review** for automated diagnostic findings.`;
+    }
+
+    // 2. Mean/σ ratio, SNR, and Radiomic inquiries
+    if (msg.includes('ratio') || msg.includes('snr') || msg.includes('mean/σ') || msg.includes('signal') || (msg.includes('contrast') && !msg.includes('enhance'))) {
+      await new Promise(r => setTimeout(r, 200));
+      if (!activeScan) return `Please upload or select an MRI scan above to inspect its calculated mean/σ ratio.`;
+      return `Radiometric breakdown for **\`${activeScan.name}\`**:
+* **Matrix Resolution**: ${activeScan.pixelStats.width} × ${activeScan.pixelStats.height} px
+* **Mean Grayscale Luminance**: **${activeScan.pixelStats.mean}** (0–255 HU equivalent)
+* **Contrast Dispersion (σ)**: **${activeScan.pixelStats.stdDev}**
+* **Mean/σ Intensity Ratio**: **${activeScan.pixelStats.snr}**
+* **Dynamic Pixel Range**: min **${activeScan.pixelStats.min}** &rarr; max **${activeScan.pixelStats.max}**
+
+*Clinical note*: In client-side radiomics, the Mean/σ ratio reflects signal dispersion across the whole raster. Higher contrast with deep dark ventricles creates a balanced ratio suitable for tissue segmentation.`;
+    }
+
+    // 3. Pulse Sequences (T1, T2, FLAIR) using word boundaries
+    if (/\b(sequence|sequences|t1|t2|flair)\b/i.test(msg)) {
+      await new Promise(r => setTimeout(r, 200));
+      return `Overview of essential Brain MRI Pulse Sequences:
+* **T1-Weighted**: Optimized for anatomical architecture. Free fluid (CSF) is hypointense (dark); cortex is gray; myelin-rich white matter is hyperintense (bright).
+* **T2-Weighted**: Sensitive to fluid and vasogenic edema. Water, CSF, and inflammatory fluids are hyperintense (bright).
+* **FLAIR (Fluid-Attenuated Inversion Recovery)**: Selectively suppresses free CSF signal, making periventricular lesions and tissue edema stand out vividly without CSF shine-through.`;
+    }
+
+    // 4. Greetings
+    if (msg === 'hi' || msg === 'hello' || msg === 'hey' || msg.startsWith('hi ') || msg.startsWith('hello ')) {
+      await new Promise(r => setTimeout(r, 150));
+      return `Hello! NeuroScan AI is ready. Currently **${cohortScans.length} scan(s)** are loaded in your session.${activeScan ? ` Active study: \`${activeScan.name}\` (Resolution: ${activeScan.pixelStats.width}×${activeScan.pixelStats.height}px, Mean/σ ratio: ${activeScan.pixelStats.snr}).` : ''} How can I assist you with your radiomic review?`;
+    }
+
+    // 5. Live Multimodal Gemini AI Generation
+    if (geminiApiKey) {
+      try {
+        const prompt = `User question: "${userMessage}"
+Active scan loaded: ${activeScan ? activeScan.name + ' (Resolution ' + activeScan.pixelStats.width + 'x' + activeScan.pixelStats.height + ', Mean ' + activeScan.pixelStats.mean + ' HU, Contrast ' + activeScan.pixelStats.stdDev + ', Mean/σ ratio ' + activeScan.pixelStats.snr + ')' : 'None'}
+Total cohort scans: ${cohortScans.length}.
+Ground your answer in medical neuro-radiology facts and the uploaded data.`;
+        return await callGeminiVision(prompt, activeScan ? activeScan.dataUrl : null);
+      } catch (err) {
+        return `*(Gemini API response note: ${err.message})*\n\nBased on your active session: currently **${cohortScans.length} scan(s)** are loaded. You can view the computed SNR, luminance, and K-means clusters above!`;
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 200));
+    return `Currently **${cohortScans.length} scan(s)** are loaded. Click any of the prompt chips below or connect your Gemini API key in the top navigation bar for live diagnostic interpretation!`;
+  }
+
+  async function handleSend(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    appendMessage('user', trimmed);
+    if (chatInput) {
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+    }
+    appendTypingIndicator();
+    try {
+      const reply = await handleChat(trimmed);
+      removeTypingIndicator();
+      appendMessage('assistant', reply);
+    } catch (err) {
+      removeTypingIndicator();
+      appendMessage('assistant', 'An unexpected error occurred. Please try again.');
+    }
+  }
+
+  chatForm?.addEventListener('submit', e => {
+    e.preventDefault();
+    if (chatInput) handleSend(chatInput.value);
+  });
+  chatInput?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(chatInput.value);
+    }
+  });
+
+  document.querySelectorAll('.quick-prompt').forEach(btn => {
+    btn.addEventListener('click', () => handleSend(btn.textContent));
+  });
+
+  attachBtn?.addEventListener('click', () => {
+    const activeScan = activeScanIndex >= 0 ? cohortScans[activeScanIndex] : null;
+    if (!activeScan) {
+      fileInput?.click();
+      return;
+    }
+    appendMessage('user', `📎 Attached: \`${activeScan.name}\``);
+    appendMessage('assistant', `Acknowledged \`${activeScan.name}\` (${activeScan.pixelStats.width}×${activeScan.pixelStats.height}px, Mean/σ ratio: ${activeScan.pixelStats.snr}). What specific anatomical or radiomic features would you like to review?`);
+  });
+
+  function appendWelcome() {
+    appendMessage('assistant', `Welcome to **NeuroScan AI — Brain MRI Radiomics Workbench**.
+
+To get started:
+* Click any **Benchmark Study** (Normal T1, Pathological T2, or FLAIR) to immediately test the system with 1-click.
+* Or **drag & drop** your real brain MRI scans (.png, .jpg, .pdf) into the upload viewport.
+* Review real-time **K-means tissue segmentation** and the **forward-chaining expert system trace** in the AI Lab.
+* Connect your Google Gemini API key via the top bar for live multimodal diagnostic impressions!`);
+  }
+  appendWelcome();
+
+  // Expose core references for modular testing
+  window.NeuroScanApp = {
+    cohortScans,
+    selectScan,
+    loadSample
+  };
+})();
